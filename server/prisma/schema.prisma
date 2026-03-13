@@ -1,0 +1,87 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Participant {
+  id        String   @id @default(uuid())
+  name      String
+  sessionId String   @unique // Socket session / browser token
+  createdAt DateTime @default(now())
+
+  card  BingoCard?
+  votes Vote[]
+}
+
+model BingoCard {
+  id            String   @id @default(uuid())
+  participantId String   @unique
+  // 25 numbers stored as JSON array (5x5), row-major order
+  numbers       Int[]
+  // bitmask as 25-bit integer: bit i set → cell i is opened
+  openedCells   Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  participant Participant @relation(fields: [participantId], references: [id])
+}
+
+model Game {
+  id        String    @id @default(uuid())
+  status    GameStatus @default(WAITING)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  rounds Round[]
+}
+
+enum GameStatus {
+  WAITING
+  ACTIVE
+  FINISHED
+}
+
+model Round {
+  id           String      @id @default(uuid())
+  gameId       String
+  roundNumber  Int
+  drawnNumber  Int
+  question     String
+  optionA      String
+  optionB      String
+  status       RoundStatus @default(VOTING)
+  majorityVote String?     // "A" | "B" | null if tie
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  game  Game   @relation(fields: [gameId], references: [id])
+  votes Vote[]
+
+  @@unique([gameId, roundNumber])
+}
+
+enum RoundStatus {
+  VOTING
+  CLOSED
+  COMPLETED
+}
+
+model Vote {
+  id            String   @id @default(uuid())
+  roundId       String
+  participantId String
+  choice        String   // "A" | "B"
+  createdAt     DateTime @default(now())
+
+  round       Round       @relation(fields: [roundId], references: [id])
+  participant Participant @relation(fields: [participantId], references: [id])
+
+  @@unique([roundId, participantId])
+}
