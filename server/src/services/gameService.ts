@@ -40,11 +40,29 @@ export async function registerParticipant(
   name: string,
   sessionId: string,
 ): Promise<ParticipantState> {
-  // Fast path: participant already in memory from this server run
+  // Fast path: participant already in memory from this server run.
+  // Update display name if it has changed and persist the change.
   const existing = Object.values(_game.participants).find(
     (p) => p.sessionId === sessionId,
   );
-  if (existing) return existing;
+  if (existing) {
+    if (existing.name !== name) {
+      const previousName = existing.name;
+      existing.name = name;
+      const prisma = getPrisma();
+      await prisma.participant
+        .update({ where: { sessionId }, data: { name } })
+        .catch((err: unknown) => {
+          // Revert in-memory name so memory and DB stay in sync
+          existing.name = previousName;
+          console.error(
+            `[registerParticipant] failed to update name for sessionId=${sessionId}:`,
+            err,
+          );
+        });
+    }
+    return existing;
+  }
 
   // Resolve the canonical DB id *before* registering in memory so the id
   // never changes once the participant can interact with the game.
@@ -163,7 +181,6 @@ export async function startRound(payload: StartRoundPayload): Promise<RoundState
   }
 
   const drawnNumber = unused[Math.floor(Math.random() * unused.length)];
-  _game.drawnNumbers.push(drawnNumber);
 
   // Reset participant votes for the new round
   for (const p of Object.values(_game.participants)) {
@@ -187,9 +204,8 @@ export async function startRound(payload: StartRoundPayload): Promise<RoundState
     newBingoWinners: [],
   };
 
-  _game.currentRound = round;
-
-  // Persist round
+  // Persist round to DB *before* mutating in-memory state so a DB failure
+  // doesn't leave the server believing a round/number was drawn when it wasn't.
   await prisma.round.create({
     data: {
       id: roundId,
@@ -202,6 +218,9 @@ export async function startRound(payload: StartRoundPayload): Promise<RoundState
       status: 'VOTING',
     },
   });
+
+  _game.drawnNumbers.push(drawnNumber);
+  _game.currentRound = round;
 
   return round;
 }
@@ -259,6 +278,7 @@ export async function closeVoting(): Promise<RoundState> {
   round.majorityVote = majority;
 
   // Open cells for eligible participants
+  const prisma = getPrisma();
 
   for (const participant of Object.values(_game.participants)) {
     const voted = round.votes[participant.id];
@@ -277,13 +297,17 @@ export async function closeVoting(): Promise<RoundState> {
         round.cellOpeners.push(participant.id);
 
         // Persist card update
-        const prisma = getPrisma();
         await prisma.bingoCard
           .updateMany({
             where: { participantId: participant.id },
             data: { openedCells: after },
           })
-          .catch(console.error);
+          .catch((err: unknown) => {
+            console.error(
+              `[closeVoting] failed to persist card for participant ${participant.id} in round ${round.id}:`,
+              err,
+            );
+          });
       }
 
       // Check bingo
@@ -302,7 +326,6 @@ export async function closeVoting(): Promise<RoundState> {
   // after closeVoting() resolves.  It is overwritten by the next startRound().
 
   // Persist round final state
-  const prisma = getPrisma();
   await prisma.round.update({
     where: { id: round.id },
     data: {

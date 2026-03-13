@@ -23,7 +23,8 @@ if (!process.env.ADMIN_SECRET) {
 }
 
 /** Constant-time comparison to prevent timing-based secret discovery */
-function isAdminSecret(provided: string): boolean {
+function isAdminSecret(provided: unknown): boolean {
+  if (typeof provided !== 'string' || provided.length === 0) return false;
   const expected = createHash('sha256').update(ADMIN_SECRET).digest();
   const actual = createHash('sha256').update(provided).digest();
   return timingSafeEqual(expected, actual);
@@ -98,10 +99,14 @@ export function registerSocketHandlers(io: Server): void {
     // -----------------------------------------------------------------------
     socket.on(
       'vote:submit',
-      async (data: { choice: 'A' | 'B' }, ack?: Function) => {
+      async (data: { choice: unknown }, ack?: Function) => {
         const participantId = socket.data.participantId;
         if (!participantId) {
           if (ack) ack({ ok: false, error: 'Not joined' });
+          return;
+        }
+        if (data.choice !== 'A' && data.choice !== 'B') {
+          if (ack) ack({ ok: false, error: 'Invalid choice: must be "A" or "B"' });
           return;
         }
         try {
