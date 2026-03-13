@@ -23,7 +23,7 @@ model Participant {
 model BingoCard {
   id            String   @id @default(uuid())
   participantId String   @unique
-  // 25 numbers stored as JSON array (5x5), row-major order
+  // 25 numbers stored as a PostgreSQL integer array (5x5), row-major order
   numbers       Int[]
   // bitmask as 25-bit integer: bit i set → cell i is opened
   openedCells   Int      @default(0)

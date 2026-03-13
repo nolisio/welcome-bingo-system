@@ -1,4 +1,5 @@
 import { Server, Socket } from 'socket.io';
+import { createHash, timingSafeEqual } from 'crypto';
 import {
   getGame,
   registerParticipant,
@@ -14,6 +15,19 @@ import {
 } from '../services/gameService';
 
 const ADMIN_SECRET = process.env.ADMIN_SECRET || 'bingo-admin-secret';
+if (!process.env.ADMIN_SECRET) {
+  console.warn(
+    '[WARNING] ADMIN_SECRET env var is not set – using the default value.' +
+    ' Set it to a strong secret before deploying to production.',
+  );
+}
+
+/** Constant-time comparison to prevent timing-based secret discovery */
+function isAdminSecret(provided: string): boolean {
+  const expected = createHash('sha256').update(ADMIN_SECRET).digest();
+  const actual = createHash('sha256').update(provided).digest();
+  return timingSafeEqual(expected, actual);
+}
 
 interface SocketData {
   participantId?: string;
@@ -28,9 +42,9 @@ export function registerSocketHandlers(io: Server): void {
     // -----------------------------------------------------------------------
     socket.on(
       'participant:join',
-      (data: { name: string; sessionId: string }, ack?: Function) => {
+      async (data: { name: string; sessionId: string }, ack?: Function) => {
         try {
-          const participant = registerParticipant(data.name, data.sessionId);
+          const participant = await registerParticipant(data.name, data.sessionId);
           setSocketId(data.sessionId, socket.id);
 
           // Store participant id on the socket for quick lookup in event handlers
@@ -121,7 +135,7 @@ export function registerSocketHandlers(io: Server): void {
     socket.on(
       'admin:start-game',
       async (data: { secret: string }, ack?: Function) => {
-        if (data.secret !== ADMIN_SECRET) {
+        if (!isAdminSecret(data.secret)) {
           if (ack) ack({ ok: false, error: 'Unauthorized' });
           return;
         }
@@ -149,7 +163,7 @@ export function registerSocketHandlers(io: Server): void {
         },
         ack?: Function,
       ) => {
-        if (data.secret !== ADMIN_SECRET) {
+        if (!isAdminSecret(data.secret)) {
           if (ack) ack({ ok: false, error: 'Unauthorized' });
           return;
         }
@@ -193,7 +207,7 @@ export function registerSocketHandlers(io: Server): void {
     socket.on(
       'admin:close-voting',
       async (data: { secret: string }, ack?: Function) => {
-        if (data.secret !== ADMIN_SECRET) {
+        if (!isAdminSecret(data.secret)) {
           if (ack) ack({ ok: false, error: 'Unauthorized' });
           return;
         }
@@ -246,7 +260,7 @@ export function registerSocketHandlers(io: Server): void {
     socket.on(
       'admin:reset-game',
       async (data: { secret: string }, ack?: Function) => {
-        if (data.secret !== ADMIN_SECRET) {
+        if (!isAdminSecret(data.secret)) {
           if (ack) ack({ ok: false, error: 'Unauthorized' });
           return;
         }

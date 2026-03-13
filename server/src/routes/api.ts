@@ -1,10 +1,19 @@
 import { Router, Request, Response } from 'express';
+import { createHash, timingSafeEqual } from 'crypto';
 import {
   getPublicGameState,
   getGame,
 } from '../services/gameService';
 
 const ADMIN_SECRET = process.env.ADMIN_SECRET || 'bingo-admin-secret';
+
+/** Constant-time comparison to prevent timing-based secret discovery */
+function isAdminSecret(provided: string | string[] | undefined): boolean {
+  if (typeof provided !== 'string') return false;
+  const expected = createHash('sha256').update(ADMIN_SECRET).digest();
+  const actual = createHash('sha256').update(provided).digest();
+  return timingSafeEqual(expected, actual);
+}
 
 const router = Router();
 
@@ -36,10 +45,14 @@ router.get('/game/rounds', (_req: Request, res: Response) => {
 });
 
 /**
- * GET /api/game/participants – list participants (admin use)
- * Returns name and hasBingo status only
+ * GET /api/game/participants – list participants (admin only)
+ * Returns name, online status, and bingo flag for each participant.
  */
-router.get('/game/participants', (_req: Request, res: Response) => {
+router.get('/game/participants', (req: Request, res: Response) => {
+  if (!isAdminSecret(req.headers['x-admin-secret'])) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
   const game = getGame();
   const list = Object.values(game.participants).map((p) => ({
     id: p.id,
@@ -52,8 +65,7 @@ router.get('/game/participants', (_req: Request, res: Response) => {
 
 /** GET /api/participants/:sessionId/card – get a participant's bingo card (admin only) */
 router.get('/participants/:sessionId/card', (req: Request, res: Response) => {
-  const secret = req.headers['x-admin-secret'];
-  if (secret !== ADMIN_SECRET) {
+  if (!isAdminSecret(req.headers['x-admin-secret'])) {
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }

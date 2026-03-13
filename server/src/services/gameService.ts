@@ -36,21 +36,40 @@ export function getGame(): GameState {
 // Participants
 // ---------------------------------------------------------------------------
 
-export function registerParticipant(
+export async function registerParticipant(
   name: string,
   sessionId: string,
-): ParticipantState {
-  // If a participant with this sessionId already exists, reuse it
+): Promise<ParticipantState> {
+  // Fast path: participant already in memory from this server run
   const existing = Object.values(_game.participants).find(
     (p) => p.sessionId === sessionId,
   );
   if (existing) return existing;
 
-  const id = uuidv4();
-  const card = {
-    numbers: generateBingoCard(),
-    openedCells: INITIAL_OPENED_CELLS,
-  };
+  // Resolve the canonical DB id *before* registering in memory so the id
+  // never changes once the participant can interact with the game.
+  const prisma = getPrisma();
+  const dbParticipant = await prisma.participant.upsert({
+    where: { sessionId },
+    update: { name },
+    create: { name, sessionId },
+    select: { id: true },
+  });
+  const id = dbParticipant.id;
+
+  // Load existing card from DB, or generate a fresh one
+  const existingCard = await prisma.bingoCard.findUnique({
+    where: { participantId: id },
+  });
+
+  let card: ParticipantState['card'];
+  if (existingCard) {
+    card = { numbers: existingCard.numbers, openedCells: existingCard.openedCells };
+  } else {
+    card = { numbers: generateBingoCard(), openedCells: INITIAL_OPENED_CELLS };
+    await prisma.bingoCard
+      .create({ data: { participantId: id, numbers: card.numbers, openedCells: card.openedCells } });
+  }
 
   const participant: ParticipantState = {
     id,
@@ -63,10 +82,6 @@ export function registerParticipant(
   };
 
   _game.participants[id] = participant;
-
-  // Persist to DB (fire-and-forget; errors logged)
-  persistParticipant(participant).catch(console.error);
-
   return participant;
 }
 
@@ -99,9 +114,17 @@ export async function startGame(): Promise<void> {
 }
 
 export async function resetGame(): Promise<void> {
-  _game = createEmptyGame();
-  // Persist new game entity
   const prisma = getPrisma();
+  // Clear all persisted state in FK-safe order before resetting memory so
+  // participants can rejoin with a clean slate (no sessionId conflicts).
+  await prisma.$transaction([
+    prisma.vote.deleteMany(),
+    prisma.bingoCard.deleteMany(),
+    prisma.round.deleteMany(),
+    prisma.participant.deleteMany(),
+    prisma.game.deleteMany(),
+  ]);
+  _game = createEmptyGame();
   await prisma.game.create({ data: { id: _game.id, status: 'WAITING' } });
 }
 
@@ -236,7 +259,6 @@ export async function closeVoting(): Promise<RoundState> {
   round.majorityVote = majority;
 
   // Open cells for eligible participants
-  const newBingoWinners: string[] = [];
 
   for (const participant of Object.values(_game.participants)) {
     const voted = round.votes[participant.id];
@@ -269,7 +291,6 @@ export async function closeVoting(): Promise<RoundState> {
         participant.hasBingo = true;
         _game.bingoWinners.push(participant.id);
         round.newBingoWinners.push(participant.id);
-        newBingoWinners.push(participant.id);
       }
     }
   }
@@ -296,44 +317,6 @@ export async function closeVoting(): Promise<RoundState> {
 // ---------------------------------------------------------------------------
 // Persistence helpers
 // ---------------------------------------------------------------------------
-
-async function persistParticipant(p: ParticipantState): Promise<void> {
-  const prisma = getPrisma();
-
-  // Upsert and retrieve the canonical DB id so the in-memory state stays in
-  // sync after a server restart (the existing row keeps its original id while
-  // the fresh in-memory participant was assigned a new UUID).
-  const dbParticipant = await prisma.participant.upsert({
-    where: { sessionId: p.sessionId },
-    update: { name: p.name },
-    create: {
-      id: p.id,
-      name: p.name,
-      sessionId: p.sessionId,
-    },
-    select: { id: true },
-  });
-
-  // Reconcile ids: if the DB returned a different id (pre-existing row), update
-  // the in-memory map so the BingoCard FK references the correct participant.
-  // This runs at most once per session per server lifetime (only the very first
-  // call after a restart can produce a mismatch), so no concurrent-update risk.
-  if (dbParticipant.id !== p.id) {
-    delete _game.participants[p.id];
-    p.id = dbParticipant.id;
-    _game.participants[p.id] = p;
-  }
-
-  await prisma.bingoCard.upsert({
-    where: { participantId: p.id },
-    update: { openedCells: p.card.openedCells },
-    create: {
-      participantId: p.id,
-      numbers: p.card.numbers,
-      openedCells: p.card.openedCells,
-    },
-  });
-}
 
 // ---------------------------------------------------------------------------
 // Public view helpers

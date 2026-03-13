@@ -165,25 +165,28 @@ export default function AdminPage() {
         <div className="bg-gray-800 rounded-2xl p-5">
           <h2 className="font-bold text-gray-300 text-sm uppercase tracking-wider mb-3">Drawn Numbers</h2>
           <div className="flex flex-wrap gap-2">
-            {Array.from({ length: 75 }, (_, i) => i + 1).map((n) => {
-              const drawn = gameState?.drawnNumbers.includes(n);
-              const isLast = gameState?.drawnNumbers[gameState.drawnNumbers.length - 1] === n;
-              return (
-                <span
-                  key={n}
-                  className={clsx(
-                    'w-8 h-8 flex items-center justify-center rounded-full text-xs font-bold',
-                    drawn
-                      ? isLast
-                        ? 'bg-yellow-400 text-gray-900'
-                        : 'bg-blue-600 text-white'
-                      : 'bg-gray-700 text-gray-400',
-                  )}
-                >
-                  {n}
-                </span>
-              );
-            })}
+            {(() => {
+              const lastDrawn = gameState?.drawnNumbers.at(-1);
+              return Array.from({ length: 75 }, (_, i) => i + 1).map((n) => {
+                const drawn = gameState?.drawnNumbers.includes(n);
+                const isLast = lastDrawn === n;
+                return (
+                  <span
+                    key={n}
+                    className={clsx(
+                      'w-8 h-8 flex items-center justify-center rounded-full text-xs font-bold',
+                      drawn
+                        ? isLast
+                          ? 'bg-yellow-400 text-gray-900'
+                          : 'bg-blue-600 text-white'
+                        : 'bg-gray-700 text-gray-400',
+                    )}
+                  >
+                    {n}
+                  </span>
+                );
+              });
+            })()}
           </div>
         </div>
 
