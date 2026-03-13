@@ -6,7 +6,7 @@ A real-time single-room bingo web app for ~60 participants at a company welcome 
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | Next.js 14 + TypeScript |
+| Frontend | Next.js 15 + TypeScript |
 | Backend | Node.js + Express + Socket.IO |
 | Database | PostgreSQL + Prisma ORM |
 
