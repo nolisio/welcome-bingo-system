@@ -3,7 +3,8 @@ import {
   getPublicGameState,
   getGame,
 } from '../services/gameService';
-import { getPrisma } from '../lib/prisma';
+
+const ADMIN_SECRET = process.env.ADMIN_SECRET || 'bingo-admin-secret';
 
 const router = Router();
 
@@ -49,8 +50,13 @@ router.get('/game/participants', (_req: Request, res: Response) => {
   res.json(list);
 });
 
-/** GET /api/participants/:sessionId/card – get a participant's bingo card */
+/** GET /api/participants/:sessionId/card – get a participant's bingo card (admin only) */
 router.get('/participants/:sessionId/card', (req: Request, res: Response) => {
+  const secret = req.headers['x-admin-secret'];
+  if (secret !== ADMIN_SECRET) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
   const game = getGame();
   const participant = Object.values(game.participants).find(
     (p) => p.sessionId === req.params.sessionId,

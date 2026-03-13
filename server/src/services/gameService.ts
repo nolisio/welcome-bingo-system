@@ -299,7 +299,11 @@ export async function closeVoting(): Promise<RoundState> {
 
 async function persistParticipant(p: ParticipantState): Promise<void> {
   const prisma = getPrisma();
-  await prisma.participant.upsert({
+
+  // Upsert and retrieve the canonical DB id so the in-memory state stays in
+  // sync after a server restart (the existing row keeps its original id while
+  // the fresh in-memory participant was assigned a new UUID).
+  const dbParticipant = await prisma.participant.upsert({
     where: { sessionId: p.sessionId },
     update: { name: p.name },
     create: {
@@ -307,7 +311,18 @@ async function persistParticipant(p: ParticipantState): Promise<void> {
       name: p.name,
       sessionId: p.sessionId,
     },
+    select: { id: true },
   });
+
+  // Reconcile ids: if the DB returned a different id (pre-existing row), update
+  // the in-memory map so the BingoCard FK references the correct participant.
+  // This runs at most once per session per server lifetime (only the very first
+  // call after a restart can produce a mismatch), so no concurrent-update risk.
+  if (dbParticipant.id !== p.id) {
+    delete _game.participants[p.id];
+    p.id = dbParticipant.id;
+    _game.participants[p.id] = p;
+  }
 
   await prisma.bingoCard.upsert({
     where: { participantId: p.id },

@@ -15,8 +15,12 @@ import {
 
 const ADMIN_SECRET = process.env.ADMIN_SECRET || 'bingo-admin-secret';
 
+interface SocketData {
+  participantId?: string;
+}
+
 export function registerSocketHandlers(io: Server): void {
-  io.on('connection', (socket: Socket) => {
+  io.on('connection', (socket: Socket<any, any, any, SocketData>) => {
     console.log(`[socket] connected: ${socket.id}`);
 
     // -----------------------------------------------------------------------
@@ -29,8 +33,8 @@ export function registerSocketHandlers(io: Server): void {
           const participant = registerParticipant(data.name, data.sessionId);
           setSocketId(data.sessionId, socket.id);
 
-          // Store mapping on socket for quick lookup
-          (socket as any).participantId = participant.id;
+          // Store participant id on the socket for quick lookup in event handlers
+          socket.data.participantId = participant.id;
 
           socket.join('participants');
           socket.join(`participant:${participant.id}`);
@@ -61,7 +65,7 @@ export function registerSocketHandlers(io: Server): void {
             if (ack) ack({ ok: false, error: 'Session not found' });
             return;
           }
-          (socket as any).participantId = p.id;
+          socket.data.participantId = p.id;
           socket.join('participants');
           socket.join(`participant:${p.id}`);
 
@@ -81,7 +85,7 @@ export function registerSocketHandlers(io: Server): void {
     socket.on(
       'vote:submit',
       async (data: { choice: 'A' | 'B' }, ack?: Function) => {
-        const participantId = (socket as any).participantId as string | undefined;
+        const participantId = socket.data.participantId;
         if (!participantId) {
           if (ack) ack({ ok: false, error: 'Not joined' });
           return;
