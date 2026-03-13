@@ -276,7 +276,9 @@ export async function closeVoting(): Promise<RoundState> {
 
   round.status = 'COMPLETED';
   _game.completedRounds.push(round);
-  _game.currentRound = null;
+  // Keep currentRound set to the completed round so socket handlers can
+  // broadcast drawnNumber / majorityVote / cellOpeners to clients immediately
+  // after closeVoting() resolves.  It is overwritten by the next startRound().
 
   // Persist round final state
   const prisma = getPrisma();
@@ -324,16 +326,24 @@ async function persistParticipant(p: ParticipantState): Promise<void> {
 
 /** Sanitised game state safe to broadcast to all clients */
 export function getPublicGameState() {
-  const { participants, currentRound, completedRounds, ...rest } = _game;
+  const { participants, currentRound, completedRounds, drawnNumbers, ...rest } = _game;
+
+  // Redact the drawn number from the public payload while voting is still open
+  // so neither the projector nor any observer can learn the number early.
+  const isVoting = currentRound?.status === 'VOTING';
+  const publicDrawnNumbers = isVoting
+    ? drawnNumbers.filter((n) => n !== currentRound?.drawnNumber)
+    : drawnNumbers;
 
   return {
     ...rest,
+    drawnNumbers: publicDrawnNumbers,
     participantCount: Object.keys(participants).length,
     currentRound: currentRound
       ? {
           id: currentRound.id,
           roundNumber: currentRound.roundNumber,
-          drawnNumber: currentRound.drawnNumber,
+          drawnNumber: isVoting ? null : currentRound.drawnNumber,
           question: currentRound.question,
           optionA: currentRound.optionA,
           optionB: currentRound.optionB,

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getSocket } from '@/lib/socket';
 import { ParticipantState, VoteChoice, BingoWinner } from '@/types/game';
 import BingoCard from '@/components/bingo/BingoCard';
@@ -25,24 +25,10 @@ export default function ParticipantPage() {
   const [error, setError] = useState('');
   const [connected, setConnected] = useState(false);
   const [bingoAnnouncement, setBingoAnnouncement] = useState<string | null>(null);
-
+  const bingoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const socket = getSocket();
-
-    const onConnect = () => {
-      setConnected(true);
-      // Auto-reconnect if session exists
-      const sessionId = getOrCreateSessionId();
-      const storedName = localStorage.getItem('bingo_name');
-      if (storedName) {
-        socket.emit('participant:reconnect', { sessionId }, (res: any) => {
-          if (res?.ok) {
-            setJoined(true);
-          }
-        });
-      }
-    };
 
     const onConnect = () => {
       setConnected(true);
@@ -66,7 +52,8 @@ export default function ParticipantPage() {
 
     const onBingoWinner = (data: { winners: BingoWinner[]; message: string }) => {
       setBingoAnnouncement(data.message);
-      setTimeout(() => setBingoAnnouncement(null), 8000);
+      if (bingoTimerRef.current) clearTimeout(bingoTimerRef.current);
+      bingoTimerRef.current = setTimeout(() => setBingoAnnouncement(null), 8000);
     };
 
     const onGameReset = () => {
@@ -74,6 +61,7 @@ export default function ParticipantPage() {
       setJoined(false);
       setState(null);
       setBingoAnnouncement(null);
+      localStorage.removeItem('bingo_name');
     };
 
     socket.on('connect', onConnect);
@@ -90,6 +78,7 @@ export default function ParticipantPage() {
       socket.off('participant:state', onParticipantState);
       socket.off('bingo:winner', onBingoWinner);
       socket.off('game:reset', onGameReset);
+      if (bingoTimerRef.current) clearTimeout(bingoTimerRef.current);
     };
   }, []);
 

@@ -10,7 +10,7 @@ export interface BingoCardState {
 export interface PublicRound {
   id: string;
   roundNumber: number;
-  drawnNumber: number;
+  drawnNumber: number | null; // null while status === 'VOTING' (redacted server-side)
   question: string;
   optionA: string;
   optionB: string;
