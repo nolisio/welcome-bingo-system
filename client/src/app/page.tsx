@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { getSocket } from '@/lib/socket';
 import { ParticipantState, VoteChoice, BingoWinner } from '@/types/game';
 import BingoCard from '@/components/bingo/BingoCard';
@@ -25,14 +25,24 @@ export default function ParticipantPage() {
   const [error, setError] = useState('');
   const [connected, setConnected] = useState(false);
   const [bingoAnnouncement, setBingoAnnouncement] = useState<string | null>(null);
-  const nameRef = useRef(name);
 
-  useEffect(() => {
-    nameRef.current = name;
-  }, [name]);
 
   useEffect(() => {
     const socket = getSocket();
+
+    const onConnect = () => {
+      setConnected(true);
+      // Auto-reconnect if session exists
+      const sessionId = getOrCreateSessionId();
+      const storedName = localStorage.getItem('bingo_name');
+      if (storedName) {
+        socket.emit('participant:reconnect', { sessionId }, (res: any) => {
+          if (res?.ok) {
+            setJoined(true);
+          }
+        });
+      }
+    };
 
     const onConnect = () => {
       setConnected(true);
