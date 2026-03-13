@@ -69,10 +69,18 @@ export default function ParticipantPage() {
       setTimeout(() => setBingoAnnouncement(null), 8000);
     };
 
+    const onGameReset = () => {
+      // Clear participant session state so the user can re-join after a reset
+      setJoined(false);
+      setState(null);
+      setBingoAnnouncement(null);
+    };
+
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
     socket.on('participant:state', onParticipantState);
     socket.on('bingo:winner', onBingoWinner);
+    socket.on('game:reset', onGameReset);
 
     if (!socket.connected) socket.connect();
 
@@ -81,6 +89,7 @@ export default function ParticipantPage() {
       socket.off('disconnect', onDisconnect);
       socket.off('participant:state', onParticipantState);
       socket.off('bingo:winner', onBingoWinner);
+      socket.off('game:reset', onGameReset);
     };
   }, []);
 
