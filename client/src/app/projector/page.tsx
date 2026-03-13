@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getSocket } from '@/lib/socket';
 import { PublicGameState, BingoWinner } from '@/types/game';
 import clsx from 'clsx';
@@ -11,6 +11,7 @@ export default function ProjectorPage() {
   const [gameState, setGameState] = useState<PublicGameState | null>(null);
   const [connected, setConnected] = useState(false);
   const [bingoEvent, setBingoEvent] = useState<{ winners: BingoWinner[]; message: string } | null>(null);
+  const bingoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const socket = getSocket();
@@ -23,7 +24,10 @@ export default function ProjectorPage() {
     const onGameState = (data: PublicGameState) => setGameState(data);
     const onBingoWinner = (data: { winners: BingoWinner[]; message: string }) => {
       setBingoEvent(data);
-      setTimeout(() => setBingoEvent(null), 10000);
+      if (bingoTimeoutRef.current) {
+        clearTimeout(bingoTimeoutRef.current);
+      }
+      bingoTimeoutRef.current = setTimeout(() => setBingoEvent(null), 10000);
     };
 
     socket.on('connect', onConnect);
@@ -34,6 +38,10 @@ export default function ProjectorPage() {
     if (!socket.connected) socket.connect();
 
     return () => {
+      if (bingoTimeoutRef.current) {
+        clearTimeout(bingoTimeoutRef.current);
+        bingoTimeoutRef.current = null;
+      }
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       socket.off('game:state', onGameState);
