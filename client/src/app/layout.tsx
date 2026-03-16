@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Welcome Bingo',
-  description: 'Company welcome party bingo game',
+  title: 'ようこそビンゴ',
+  description: '歓迎会向けビンゴゲーム',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -21,9 +21,13 @@ export default function VotePanel({
   onVote,
 }: VotePanelProps) {
   return (
-    <div className="bg-white rounded-2xl shadow-lg p-6 w-full max-w-sm mx-auto">
-      <p className="text-center text-lg font-semibold text-gray-800 mb-6">{question}</p>
-      <div className="flex gap-4">
+    <section className="rounded-[1.5rem] border border-white/10 bg-white/5 p-5 shadow-[0_16px_40px_rgba(0,0,0,0.2)]">
+      <div className="mb-5 text-center">
+        <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">今回の投票</p>
+        <p className="mt-3 text-lg font-bold leading-7 text-white">{question}</p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
         {(['A', 'B'] as VoteChoice[]).map((choice) => {
           const label = choice === 'A' ? optionA : optionB;
           const selected = myVote === choice;
@@ -33,24 +37,30 @@ export default function VotePanel({
               onClick={() => !disabled && onVote(choice)}
               disabled={disabled}
               className={clsx(
-                'flex-1 py-4 rounded-xl text-xl font-extrabold transition-all duration-200',
+                'rounded-[1.35rem] border px-4 py-5 text-left transition-all duration-200',
                 selected
-                  ? 'bg-blue-600 text-white scale-105 shadow-lg'
-                  : 'bg-gray-100 text-gray-700 hover:bg-blue-50',
-                disabled && !selected && 'opacity-50 cursor-not-allowed',
+                  ? 'border-[#690dab] bg-[#690dab] text-white shadow-[0_0_18px_rgba(105,13,171,0.5)] ring-2 ring-[#690dab]/30'
+                  : 'border-white/10 bg-[#241630] text-slate-100 hover:border-[#690dab]/40 hover:bg-[#2a1936]',
+                disabled && !selected && 'cursor-not-allowed opacity-60',
               )}
             >
-              <span className="block text-2xl mb-1">{choice}</span>
-              <span className="block text-sm font-medium">{label}</span>
+              <span className="inline-flex rounded-full border border-white/10 bg-black/15 px-3 py-1 text-xs font-black uppercase tracking-[0.2em]">
+                選択肢 {choice}
+              </span>
+              <span className="mt-4 block text-xl font-black tracking-[-0.02em]">{label}</span>
+              <span className="mt-2 block text-sm text-slate-300">
+                {selected ? 'この内容で投票済みです。' : 'タップしてこの選択肢に投票します。'}
+              </span>
             </button>
           );
         })}
       </div>
+
       {myVote && (
-        <p className="mt-4 text-center text-sm text-gray-500">
-          You voted <strong>{myVote}</strong>. Waiting for results…
+        <p className="mt-4 rounded-2xl border border-white/10 bg-black/10 px-4 py-3 text-center text-sm text-slate-300">
+          <strong>{myVote}</strong> に投票しました。結果を待っています...
         </p>
       )}
-    </div>
+    </section>
   );
 }

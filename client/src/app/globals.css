@@ -2,14 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
-}
-
 body {
-  color: rgb(var(--foreground-rgb));
+  background: #12091c;
+  color: #f8fafc;
 }
 
 /* Bingo cell pulse animation for newly opened cells */
@@ -21,4 +16,13 @@ body {
 
 .cell-opening {
   animation: cell-open 0.4s ease-in-out;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
