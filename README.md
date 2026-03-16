@@ -1,81 +1,82 @@
 # Welcome Bingo System 🎱
 
-A real-time single-room bingo web app for ~60 participants at a company welcome party.
+会社の歓迎会などで、約 60 人規模の参加者がリアルタイムで遊べるシングルルーム構成のビンゴ Web アプリです。
 
-## Stack
+## 技術構成
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | Next.js 15 + TypeScript |
-| Backend | Node.js + Express + Socket.IO |
-| Database | PostgreSQL + Prisma ORM |
+| レイヤー | 技術 |
+|---------|------|
+| フロントエンド | Next.js 15 + TypeScript |
+| バックエンド | Node.js + Express + Socket.IO |
+| データベース | PostgreSQL + Prisma ORM |
 
-## Project Structure
+## プロジェクト構成
 
-```
+```text
 welcome-bingo-system/
-├── server/                # Node.js + Socket.IO backend
+├── server/                # Node.js + Socket.IO バックエンド
 │   ├── src/
-│   │   ├── index.ts       # Entry point (Express + Socket.IO server)
-│   │   ├── models/        # Domain type definitions
-│   │   ├── services/      # gameService – single source of truth
-│   │   ├── socket/        # Socket.IO event handlers
-│   │   ├── routes/        # REST API routes
-│   │   └── lib/           # Prisma client, bingo card utils
+│   │   ├── index.ts       # エントリーポイント（Express + Socket.IO サーバ）
+│   │   ├── models/        # ドメイン型定義
+│   │   ├── services/      # gameService - ゲーム状態の単一ソース
+│   │   ├── socket/        # Socket.IO イベントハンドラ
+│   │   ├── routes/        # REST API ルート
+│   │   └── lib/           # Prisma クライアント、ビンゴカードユーティリティ
 │   ├── prisma/
-│   │   └── schema.prisma  # DB schema
+│   │   └── schema.prisma  # DB スキーマ
 │   └── Dockerfile
-├── client/                # Next.js frontend
+├── client/                # Next.js フロントエンド
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── page.tsx          # Participant mobile screen (/)
-│   │   │   ├── admin/page.tsx    # Admin control screen (/admin)
-│   │   │   └── projector/page.tsx # Public projector screen (/projector)
+│   │   │   ├── page.tsx           # 参加者画面 (/)
+│   │   │   ├── admin/page.tsx     # 管理者画面 (/admin)
+│   │   │   └── projector/page.tsx # 会場表示画面 (/projector)
 │   │   ├── components/
 │   │   │   ├── bingo/BingoCard.tsx
 │   │   │   └── game/VotePanel.tsx
-│   │   ├── lib/socket.ts  # Socket.IO client singleton
-│   │   └── types/game.ts  # Shared type definitions
+│   │   ├── lib/socket.ts  # Socket.IO クライアントのシングルトン
+│   │   └── types/game.ts  # 共有型定義
 │   └── Dockerfile
 ├── docker-compose.yml
-└── package.json           # Monorepo scripts
+├── render.yaml            # Render デプロイ構成
+└── package.json           # モノレポ用スクリプト
 ```
 
-## Screens
+## 画面一覧
 
-| URL | Purpose |
-|-----|---------|
-| `/` | **Participant** – mobile bingo card + A/B voting |
-| `/admin` | **Admin** – start game/rounds, close voting, see results |
-| `/projector` | **Projector** – full-screen public display for the room |
+| URL | 用途 |
+|-----|------|
+| `/` | **参加者画面** – モバイル向けビンゴカードと A/B 投票 |
+| `/admin` | **管理者画面** – ゲーム開始、ラウンド開始、投票締切、結果確認 |
+| `/projector` | **会場表示画面** – 会場向けの全画面表示 |
 
-## Game Flow
+## ゲーム進行
 
-1. **Admin** opens `/admin`, enters the secret, and clicks **Start Game**.
-2. Admin enters a question + two A/B options, then clicks **Draw Number & Start Round**.
-3. The server draws a random unused number (1–75) and opens voting.
-4. **Participants** open `/` on their phones, enter their name once, and vote A or B.
-5. Admin clicks **Close Voting & Reveal Results** when ready.
-6. Server determines the majority vote:
-   - Participants who voted for the majority **and** have the drawn number on their card open that cell.
-   - If it's a tie, nobody opens a cell.
-7. Bingo is checked after each round. Winners are announced to everyone.
-8. Repeat from step 2.
+1. **管理者**が `/admin` を開き、シークレットを入力して**ゲーム開始**します。
+2. 管理者が質問と 2 つの選択肢を入力し、**番号を引いてラウンド開始**します。
+3. サーバが未使用の番号（1〜75）をランダムに引き、投票を開始します。
+4. **参加者**はスマートフォンで `/` を開き、名前を入力して A/B に投票します。
+5. 管理者が**投票を締め切って結果公開**します。
+6. サーバが多数決結果を判定します。
+   - 多数派に投票し、かつ引かれた番号を自分のカードに持っている参加者は、そのマスが開きます。
+   - 引き分けの場合は誰のマスも開きません。
+7. 各ラウンド後にビンゴ判定が行われ、勝者が全員に通知されます。
+8. 以後は 2 の手順から繰り返します。
 
-### Bingo Card Rules
+### ビンゴカードのルール
 
-- Standard 5×5 card (B1–15, I16–30, N31–45, G46–60, O61–75).
-- The center cell is pre-opened (FREE) for all new participants.
-- Winning patterns: any row, any column, or either diagonal.
+- 標準的な 5×5 のビンゴカード（B1–15, I16–30, N31–45, G46–60, O61–75）
+- 中央マスは最初から開いているフリーマス
+- 勝利条件は、横一列・縦一列・斜め一列のいずれか
 
-## Quick Start
+## クイックスタート
 
-### Prerequisites
+### 前提条件
 
-- Node.js ≥ 20
-- PostgreSQL running locally (or use Docker Compose)
+- Node.js 20 以上
+- ローカルで動作する PostgreSQL（または Docker Compose）
 
-### 1. Clone & install
+### 1. クローンと依存関係インストール
 
 ```bash
 git clone <repo>
@@ -84,97 +85,157 @@ cd server && npm install
 cd ../client && npm install
 ```
 
-### 2. Set up environment
+### 2. 環境変数を設定
 
 ```bash
-# Server
+# サーバ
 cp server/.env.example server/.env
-# Edit DATABASE_URL, ADMIN_SECRET as needed
+# 必要に応じて DATABASE_URL, ADMIN_SECRET を編集
 
-# Client
+# クライアント
 cp client/.env.local.example client/.env.local
 # NEXT_PUBLIC_SERVER_URL=http://localhost:4000
 ```
 
-### 3. Set up database
+### 3. データベースをセットアップ
 
 ```bash
 cd server
 npx prisma migrate dev --name init
-# or for a quick push:
+# 手早く反映したい場合:
 npx prisma db push
 ```
 
-### 4. Start development servers
+### 4. 開発サーバを起動
 
 ```bash
-# Terminal 1 – backend
+# ターミナル 1 - バックエンド
 cd server && npm run dev
 
-# Terminal 2 – frontend
+# ターミナル 2 - フロントエンド
 cd client && npm run dev
 ```
 
-### Docker Compose (recommended)
+### Docker Compose（推奨）
 
 ```bash
 ADMIN_SECRET=my-secret docker-compose up --build
 ```
 
-Then open:
-- Participant: http://localhost:3000
-- Admin:       http://localhost:3000/admin
-- Projector:   http://localhost:3000/projector
+起動後に以下へアクセスします。
+
+- 参加者画面: http://localhost:3000
+- 管理者画面: http://localhost:3000/admin
+- 会場表示画面: http://localhost:3000/projector
 
 ## REST API
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/health` | Health check |
-| GET | `/api/game/state` | Current public game state |
-| GET | `/api/game/rounds` | Completed rounds history |
-| GET | `/api/game/participants` | Participant list (name, hasBingo, online) |
-| GET | `/api/participants/:sessionId/card` | A participant's bingo card |
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/health` | ヘルスチェック |
+| GET | `/api/game/state` | 現在の公開ゲーム状態 |
+| GET | `/api/game/rounds` | 完了済みラウンド履歴 |
+| GET | `/api/game/participants` | 参加者一覧（名前、ビンゴ有無、オンライン状態） |
+| GET | `/api/participants/:sessionId/card` | 指定参加者のビンゴカード |
 
-## Socket.IO Events
+## Socket.IO イベント
 
-### Client → Server
+### クライアント → サーバ
 
-| Event | Payload | Description |
-|-------|---------|-------------|
-| `participant:join` | `{ name, sessionId }` | Join with name + browser session token |
-| `participant:reconnect` | `{ sessionId }` | Restore session after reconnect |
-| `public:subscribe` | — | Subscribe to public game state (admin/projector) |
-| `vote:submit` | `{ choice: 'A'\|'B' }` | Cast a vote in the current round |
-| `admin:start-game` | `{ secret }` | Start the game |
-| `admin:start-round` | `{ secret, question, optionA, optionB }` | Draw a number and start a round |
-| `admin:close-voting` | `{ secret }` | Close voting and compute results |
-| `admin:reset-game` | `{ secret }` | Reset everything |
+| イベント | ペイロード | 説明 |
+|---------|-----------|------|
+| `participant:join` | `{ name, sessionId }` | 名前とブラウザセッション ID で参加 |
+| `participant:reconnect` | `{ sessionId }` | 再接続時にセッション復元 |
+| `public:subscribe` | — | 公開ゲーム状態の購読（管理者 / 会場表示向け） |
+| `vote:submit` | `{ choice: 'A'\|'B' }` | 現在のラウンドに投票 |
+| `admin:start-game` | `{ secret }` | ゲーム開始 |
+| `admin:start-round` | `{ secret, question, optionA, optionB }` | 番号を引いてラウンド開始 |
+| `admin:close-voting` | `{ secret }` | 投票を締め切って結果計算 |
+| `admin:reset-game` | `{ secret }` | ゲームを完全リセット |
 
-### Server → Client
+### サーバ → クライアント
 
-| Event | Payload | Description |
-|-------|---------|-------------|
-| `game:state` | `PublicGameState` | Broadcast game state to all |
-| `participant:state` | `ParticipantState` | Personal state sent to a single participant |
-| `round:started` | Round info | New round announced |
-| `round:completed` | Round result | Round result with majority + cell openers |
-| `bingo:winner` | `{ winners, message }` | Bingo winner announcement |
-| `game:reset` | `{ message }` | Game was reset |
+| イベント | ペイロード | 説明 |
+|---------|-----------|------|
+| `game:state` | `PublicGameState` | ゲーム状態を全体配信 |
+| `participant:state` | `ParticipantState` | 参加者個人の状態を送信 |
+| `round:started` | Round info | 新しいラウンド開始を通知 |
+| `round:completed` | Round result | 多数派とマス開放結果を含むラウンド結果 |
+| `bingo:winner` | `{ winners, message }` | ビンゴ達成者の通知 |
+| `game:reset` | `{ message }` | ゲームリセット通知 |
 
-## Prisma Schema
+## Prisma スキーマ
 
-Key models: `Participant`, `BingoCard`, `Game`, `Round`, `Vote`.
+主なモデルは `Participant`、`BingoCard`、`Game`、`Round`、`Vote` です。
 
-History is persisted to PostgreSQL; runtime state lives in memory in `gameService.ts`.
+履歴データは PostgreSQL に永続化されますが、進行中ゲームの実行時状態は `gameService.ts` のメモリ上に保持されています。
 
-## Configuration
+## 設定項目
 
-| Env var | Default | Description |
-|---------|---------|-------------|
-| `PORT` | `4000` | Server port |
-| `DATABASE_URL` | — | PostgreSQL connection string |
-| `CLIENT_URL` | `http://localhost:3000` | Allowed CORS origin |
-| `ADMIN_SECRET` | `bingo-admin-secret` | Password for admin actions |
-| `NEXT_PUBLIC_SERVER_URL` | `http://localhost:4000` | Socket.IO server URL for the browser |
+| 環境変数 | デフォルト | 説明 |
+|---------|-----------|------|
+| `PORT` | `4000` | サーバの待受ポート |
+| `DATABASE_URL` | — | PostgreSQL の接続文字列 |
+| `CLIENT_URL` | `http://localhost:3000` | CORS で許可するクライアント URL |
+| `ADMIN_SECRET` | `bingo-admin-secret` | 管理者操作用のシークレット |
+| `NEXT_PUBLIC_SERVER_URL` | `http://localhost:4000` | ブラウザから接続する Socket.IO サーバ URL |
 
+## Render へのデプロイ
+
+このリポジトリには、`render.yaml` に Render Blueprint 構成が含まれています。以下の 3 つをまとめて作成できます。
+
+- `welcome-bingo-db` – PostgreSQL
+- `welcome-bingo-server` – Express + Socket.IO + Prisma API
+- `welcome-bingo-client` – Next.js フロントエンド
+
+### 推奨する本番構成
+
+- **サーバは単一インスタンスで運用する**
+- **データベースは Render Postgres を利用する**
+- **クライアントとサーバは別 Web サービスとしてデプロイする**
+
+この前提が重要なのは、完了済みラウンドや参加者データは PostgreSQL に保存される一方で、進行中ゲームの状態は `server/src/services/gameService.ts` のメモリ上にあるためです。サーバを水平分散すると、インスタンスごとに状態がずれて不整合が起こります。
+
+### Render セットアップ手順
+
+1. このリポジトリを GitHub に push します。
+2. Render で **Blueprint** を新規作成し、このリポジトリを指定します。
+3. Render が `render.yaml` を読み取り、データベースと 2 つの Web サービスを準備します。
+4. 公開前に `ADMIN_SECRET` を本番用の安全な値へ変更します。
+5. そのままデプロイします。
+
+### URL 設定について
+
+Blueprint では、以下のサービス名と公開 URL を前提にしています。
+
+- クライアント: `https://welcome-bingo-client.onrender.com`
+- サーバ: `https://welcome-bingo-server.onrender.com`
+
+これらの値は次の環境変数に設定されます。
+
+- サーバ側の `CLIENT_URL`
+- クライアント側の `NEXT_PUBLIC_SERVER_URL`
+
+もし Render 側で別のサービス名になった場合や、自分で名前を変更した場合は、Render の環境変数設定を更新して、両サービスを再デプロイしてください。
+
+### Render 上で実行されるコマンド
+
+サーバ:
+
+```bash
+npm ci && npm run db:generate && npm run build
+npx prisma migrate deploy && npm start
+```
+
+クライアント:
+
+```bash
+npm ci && npm run build
+npm start
+```
+
+### 運用上の注意
+
+- サーバが再起動すると、進行中のゲーム状態（メモリ上の状態）はリセットされます。
+- 参加者、カード、ラウンド、投票履歴などの永続データは PostgreSQL に残ります。
+- 無停止再起動や複数インスタンス構成が必要な場合は、まずゲーム実行状態をメモリ外へ移す設計変更が必要です。

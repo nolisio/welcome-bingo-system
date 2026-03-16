@@ -21,23 +21,36 @@ export default function BingoCard({
   const isCellOpen = (idx: number) => (openedCells & (1 << idx)) !== 0;
   const isFree = (idx: number) => idx === 12; // center cell
 
-  const cellSize = {
-    sm: 'w-10 h-10 text-xs',
-    md: 'w-14 h-14 text-sm',
-    lg: 'w-16 h-16 text-base',
+  const styles = {
+    sm: {
+      wrapper: 'gap-1',
+      headers: 'text-xl',
+      cell: 'text-sm',
+      free: 'text-[9px]',
+    },
+    md: {
+      wrapper: 'gap-1.5',
+      headers: 'text-2xl',
+      cell: 'text-lg',
+      free: 'text-[10px]',
+    },
+    lg: {
+      wrapper: 'gap-2',
+      headers: 'text-[2rem]',
+      cell: 'text-xl',
+      free: 'text-xs',
+    },
   }[size];
 
   return (
-    <div className="inline-block select-none">
-      {/* Column headers */}
-      <div className="flex">
+    <div className="w-full select-none rounded-[1.5rem] border-4 border-[#690dab]/30 bg-[#690dab]/10 p-3 shadow-[0_24px_70px_rgba(105,13,171,0.28)]">
+      <div className={clsx('mb-2 grid grid-cols-5', styles.wrapper)}>
         {COLUMNS.map((col) => (
           <div
             key={col}
             className={clsx(
-              'flex items-center justify-center font-extrabold text-white bg-blue-600 rounded-t',
-              cellSize,
-              'mx-0.5',
+              'text-center font-black text-[#c084fc] drop-shadow-sm',
+              styles.headers,
             )}
           >
             {col}
@@ -45,36 +58,46 @@ export default function BingoCard({
         ))}
       </div>
 
-      {/* Grid rows */}
-      {Array.from({ length: 5 }, (_, row) => (
-        <div key={row} className="flex">
-          {Array.from({ length: 5 }, (_, col) => {
-            const idx = row * 5 + col;
-            const num = numbers[idx];
-            const opened = isCellOpen(idx);
-            const free = isFree(idx);
-            const isHighlighted = !free && num === highlightNumber;
+      <div className={clsx('grid aspect-square grid-cols-5', styles.wrapper)}>
+        {Array.from({ length: 25 }, (_, idx) => {
+          const num = numbers[idx];
+          const opened = isCellOpen(idx);
+          const free = isFree(idx);
+          const isHighlighted = !free && num === highlightNumber;
 
-            return (
-              <div
-                key={col}
-                className={clsx(
-                  'flex items-center justify-center font-bold border border-gray-200 rounded mx-0.5 my-0.5 transition-all duration-300',
-                  cellSize,
-                  opened
-                    ? 'bg-blue-500 text-white shadow-inner'
-                    : 'bg-white text-gray-800',
-                  free && 'bg-yellow-400 text-white',
-                  isHighlighted && !opened && 'ring-2 ring-orange-400 bg-orange-50',
-                  isHighlighted && opened && 'ring-2 ring-green-400',
-                )}
-              >
-                {free ? '★' : num}
-              </div>
-            );
-          })}
-        </div>
-      ))}
+          return (
+            <div
+              key={idx}
+              className={clsx(
+                'flex aspect-square items-center justify-center rounded-xl border text-center font-bold transition-all duration-300',
+                styles.cell,
+                opened
+                  ? 'border-[#690dab] bg-[#690dab] text-white shadow-[0_0_18px_rgba(105,13,171,0.55)] ring-2 ring-[#690dab]/30'
+                  : 'border-white/10 bg-[#241630] text-slate-200',
+                free &&
+                  'flex-col border-dashed border-[#c084fc]/60 bg-[#690dab]/20 font-black text-[#d8b4fe]',
+                isHighlighted &&
+                  !opened &&
+                  'border-[#c084fc]/60 bg-[#31203d] text-white ring-2 ring-[#690dab]/35',
+                isHighlighted &&
+                  opened &&
+                  'ring-2 ring-emerald-400/80 shadow-[0_0_22px_rgba(52,211,153,0.35)]',
+              )}
+            >
+              {free ? (
+                <>
+                  <span className="text-base leading-none">★</span>
+                  <span className={clsx('mt-1 block font-black tracking-[0.12em]', styles.free)}>
+                    フリー
+                  </span>
+                </>
+              ) : (
+                num
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
