@@ -180,62 +180,13 @@ ADMIN_SECRET=my-secret docker-compose up --build
 | `ADMIN_SECRET` | `bingo-admin-secret` | 管理者操作用のシークレット |
 | `NEXT_PUBLIC_SERVER_URL` | `http://localhost:4000` | ブラウザから接続する Socket.IO サーバ URL |
 
-## Render へのデプロイ
+## デプロイ
 
-このリポジトリには、`render.yaml` に Render Blueprint 構成が含まれています。以下の 3 つをまとめて作成できます。
+デプロイ方針と具体手順は `docs/deployment.md` に分離しました。
 
-- `welcome-bingo-db` – PostgreSQL
-- `welcome-bingo-server` – Express + Socket.IO + Prisma API
-- `welcome-bingo-client` – Next.js フロントエンド
+- 低コストで運用するための `単一 VPS + Docker Compose` 案
+- `Render Blueprint` を使う場合の構成
+- 本番環境変数、更新手順、運用上の注意
+- 将来のスケール時に必要な設計変更
 
-### 推奨する本番構成
-
-- **サーバは単一インスタンスで運用する**
-- **データベースは Render Postgres を利用する**
-- **クライアントとサーバは別 Web サービスとしてデプロイする**
-
-この前提が重要なのは、完了済みラウンドや参加者データは PostgreSQL に保存される一方で、進行中ゲームの状態は `server/src/services/gameService.ts` のメモリ上にあるためです。サーバを水平分散すると、インスタンスごとに状態がずれて不整合が起こります。
-
-### Render セットアップ手順
-
-1. このリポジトリを GitHub に push します。
-2. Render で **Blueprint** を新規作成し、このリポジトリを指定します。
-3. Render が `render.yaml` を読み取り、データベースと 2 つの Web サービスを準備します。
-4. 公開前に `ADMIN_SECRET` を本番用の安全な値へ変更します。
-5. そのままデプロイします。
-
-### URL 設定について
-
-Blueprint では、以下のサービス名と公開 URL を前提にしています。
-
-- クライアント: `https://welcome-bingo-client.onrender.com`
-- サーバ: `https://welcome-bingo-server.onrender.com`
-
-これらの値は次の環境変数に設定されます。
-
-- サーバ側の `CLIENT_URL`
-- クライアント側の `NEXT_PUBLIC_SERVER_URL`
-
-もし Render 側で別のサービス名になった場合や、自分で名前を変更した場合は、Render の環境変数設定を更新して、両サービスを再デプロイしてください。
-
-### Render 上で実行されるコマンド
-
-サーバ:
-
-```bash
-npm ci && npm run db:generate && npm run build
-npx prisma migrate deploy && npm start
-```
-
-クライアント:
-
-```bash
-npm ci && npm run build
-npm start
-```
-
-### 運用上の注意
-
-- サーバが再起動すると、進行中のゲーム状態（メモリ上の状態）はリセットされます。
-- 参加者、カード、ラウンド、投票履歴などの永続データは PostgreSQL に残ります。
-- 無停止再起動や複数インスタンス構成が必要な場合は、まずゲーム実行状態をメモリ外へ移す設計変更が必要です。
+詳しくは [`docs/deployment.md`](docs/deployment.md) を参照してください。

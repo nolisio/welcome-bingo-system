@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Welcome Bingo System – monorepo",
   "private": true,
+  "engines": {
+    "node": "20.x"
+  },
   "workspaces": ["server", "client"],
   "scripts": {
     "dev:server": "cd server && npm run dev",
