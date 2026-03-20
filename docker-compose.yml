@@ -1,15 +1,13 @@
-version: '3.9'
-
 services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: bingo
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-bingo}
     ports:
-      - '5432:5432'
+      - '${DB_PORT:-5432}:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
 
@@ -19,12 +17,12 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/bingo
-      PORT: 4000
-      CLIENT_URL: http://localhost:3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-bingo}
+      PORT: ${SERVER_PORT:-4000}
+      CLIENT_URL: ${CLIENT_URL:-http://localhost:3000}
       ADMIN_SECRET: ${ADMIN_SECRET:-bingo-admin-secret}
     ports:
-      - '4000:4000'
+      - '${SERVER_PORT:-4000}:4000'
     depends_on:
       - db
 
@@ -32,11 +30,13 @@ services:
     build:
       context: ./client
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SERVER_URL: ${NEXT_PUBLIC_SERVER_URL:-http://localhost:4000}
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_SERVER_URL: http://localhost:4000
+      NEXT_PUBLIC_SERVER_URL: ${NEXT_PUBLIC_SERVER_URL:-http://localhost:4000}
     ports:
-      - '3000:3000'
+      - '${CLIENT_PORT:-3000}:3000'
     depends_on:
       - server
 
