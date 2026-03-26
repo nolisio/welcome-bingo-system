@@ -29,4 +29,4 @@ COPY --from=builder /app/next.config.js ./
 
 EXPOSE 3000
 
-CMD ["npm", "start"]
+CMD ["sh", "-c", "npm start"]
