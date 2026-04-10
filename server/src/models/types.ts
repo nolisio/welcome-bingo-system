@@ -4,16 +4,33 @@
  */
 
 export type VoteChoice = 'A' | 'B';
+export type CustomQuestionStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+export type RoundQuestionSource = 'MANUAL' | 'POOL';
+export type BonusRoundType = 'NONE' | 'MAJORITY' | 'QUIZ';
 
 export interface ParticipantState {
   id: string;
   name: string;
   sessionId: string;
+  isNewEmployee: boolean;
   socketId: string | null;
   card: BingoCardState;
   /** Whether participant has submitted a vote in the current round */
   currentVote: VoteChoice | null;
   hasBingo: boolean;
+}
+
+export interface CustomQuestionRequestState {
+  participantId: string;
+  participantName: string;
+  requestedAt: string;
+}
+
+export interface AdminParticipantSummary {
+  id: string;
+  name: string;
+  isNewEmployee: boolean;
+  connected: boolean;
 }
 
 export interface BingoCardState {
@@ -33,6 +50,14 @@ export interface RoundState {
   question: string;
   optionA: string;
   optionB: string;
+  questionImageUrl: string | null;
+  optionAImageUrl: string | null;
+  optionBImageUrl: string | null;
+  sourceType: RoundQuestionSource;
+  preparedQuestionId: string | null;
+  isBonusRound: boolean;
+  bonusRoundType: BonusRoundType;
+  correctChoice: VoteChoice | null;
   status: RoundStatus;
   majorityVote: VoteChoice | null;
   /** participantId → VoteChoice */
@@ -41,6 +66,10 @@ export interface RoundState {
   cellOpeners: string[];
   /** participantIds who got bingo this round */
   newBingoWinners: string[];
+  /** participantIds who can still choose a bonus cell */
+  pendingBonusSelectors: string[];
+  /** participantId -> selected cell index */
+  bonusSelections: Record<string, number>;
 }
 
 export interface GameState {
@@ -52,4 +81,33 @@ export interface GameState {
   completedRounds: RoundState[];
   participants: Record<string, ParticipantState>;
   bingoWinners: string[];
+  customQuestionRequest: CustomQuestionRequestState | null;
+}
+
+export interface CustomQuestionRecord {
+  id: string;
+  participantId: string;
+  participantName: string;
+  question: string;
+  optionA: string;
+  optionB: string;
+  status: CustomQuestionStatus;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
+export interface PreparedQuestionRecord {
+  id: string;
+  question: string;
+  optionA: string;
+  optionB: string;
+  imageUrl: string | null;
+  optionAImageUrl: string | null;
+  optionBImageUrl: string | null;
+  isActive: boolean;
+  usedInCurrentGame: boolean;
+  totalUseCount: number;
+  createdAt: string;
+  updatedAt: string;
 }
