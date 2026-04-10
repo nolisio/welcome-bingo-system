@@ -11,13 +11,15 @@ datasource db {
 }
 
 model Participant {
-  id        String   @id @default(uuid())
-  name      String
-  sessionId String   @unique // Socket session / browser token
-  createdAt DateTime @default(now())
+  id            String   @id @default(uuid())
+  name          String
+  sessionId     String   @unique // Socket session / browser token
+  isNewEmployee Boolean  @default(false)
+  createdAt     DateTime @default(now())
 
-  card  BingoCard?
-  votes Vote[]
+  card             BingoCard?
+  votes            Vote[]
+  customQuestions  CustomQuestion[]
 }
 
 model BingoCard {
@@ -56,13 +58,22 @@ model Round {
   question     String
   optionA      String
   optionB      String
+  questionImageUrl String?
+  optionAImageUrl String?
+  optionBImageUrl String?
+  sourceType   RoundQuestionSource @default(MANUAL)
+  preparedQuestionId String?
+  isBonusRound Boolean @default(false)
+  bonusRoundType String @default("NONE")
+  correctChoice String?
   status       RoundStatus @default(VOTING)
   majorityVote String?     // "A" | "B" | null if tie
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
-  game  Game   @relation(fields: [gameId], references: [id])
-  votes Vote[]
+  game             Game             @relation(fields: [gameId], references: [id])
+  preparedQuestion PreparedQuestion? @relation(fields: [preparedQuestionId], references: [id])
+  votes            Vote[]
 
   @@unique([gameId, roundNumber])
 }
@@ -71,6 +82,11 @@ enum RoundStatus {
   VOTING
   CLOSED
   COMPLETED
+}
+
+enum RoundQuestionSource {
+  MANUAL
+  POOL
 }
 
 model Vote {
@@ -84,4 +100,39 @@ model Vote {
   participant Participant @relation(fields: [participantId], references: [id])
 
   @@unique([roundId, participantId])
+}
+
+model CustomQuestion {
+  id            String               @id @default(uuid())
+  participantId String
+  question      String
+  optionA       String
+  optionB       String
+  status        CustomQuestionStatus @default(PENDING)
+  reviewedBy    String?
+  reviewedAt    DateTime?
+  createdAt     DateTime             @default(now())
+
+  participant Participant @relation(fields: [participantId], references: [id])
+}
+
+enum CustomQuestionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model PreparedQuestion {
+  id        String   @id @default(uuid())
+  question  String
+  optionA   String
+  optionB   String
+  imageUrl  String?
+  optionAImageUrl String?
+  optionBImageUrl String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rounds Round[]
 }
