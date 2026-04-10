@@ -35,11 +35,18 @@ router.get('/game/rounds', (_req: Request, res: Response) => {
       id: r.id,
       roundNumber: r.roundNumber,
       drawnNumber: r.drawnNumber,
+      isBonusRound: r.isBonusRound,
+      bonusRoundType: r.bonusRoundType,
+      correctChoice: r.correctChoice,
       question: r.question,
       optionA: r.optionA,
       optionB: r.optionB,
+      questionImageUrl: r.questionImageUrl,
+      sourceType: r.sourceType,
       majorityVote: r.majorityVote,
       voteCount: Object.keys(r.votes).length,
+      bonusSelectionCount: Object.keys(r.bonusSelections).length,
+      pendingBonusSelectorCount: r.pendingBonusSelectors.length,
     })),
   );
 });
@@ -50,13 +57,14 @@ router.get('/game/rounds', (_req: Request, res: Response) => {
  */
 router.get('/game/participants', (req: Request, res: Response) => {
   if (!isAdminSecret(req.headers['x-admin-secret'])) {
-    res.status(401).json({ error: 'Unauthorized' });
+    res.status(401).json({ error: '管理者認証に失敗しました' });
     return;
   }
   const game = getGame();
   const list = Object.values(game.participants).map((p) => ({
     id: p.id,
     name: p.name,
+    isNewEmployee: p.isNewEmployee,
     hasBingo: p.hasBingo,
     online: !!p.socketId,
   }));
@@ -66,7 +74,7 @@ router.get('/game/participants', (req: Request, res: Response) => {
 /** GET /api/participants/:sessionId/card – get a participant's bingo card (admin only) */
 router.get('/participants/:sessionId/card', (req: Request, res: Response) => {
   if (!isAdminSecret(req.headers['x-admin-secret'])) {
-    res.status(401).json({ error: 'Unauthorized' });
+    res.status(401).json({ error: '管理者認証に失敗しました' });
     return;
   }
   const game = getGame();
@@ -74,12 +82,13 @@ router.get('/participants/:sessionId/card', (req: Request, res: Response) => {
     (p) => p.sessionId === req.params.sessionId,
   );
   if (!participant) {
-    res.status(404).json({ error: 'Participant not found' });
+    res.status(404).json({ error: '参加者が見つかりません' });
     return;
   }
   res.json({
     participantId: participant.id,
     name: participant.name,
+    isNewEmployee: participant.isNewEmployee,
     card: participant.card,
   });
 });
