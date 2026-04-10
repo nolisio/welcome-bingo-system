@@ -1,19 +1,28 @@
+import { Prisma } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 import {
+  AdminParticipantSummary,
+  BonusRoundType,
+  CustomQuestionRequestState,
   GameState,
   ParticipantState,
+  RoundQuestionSource,
   RoundState,
   VoteChoice,
 } from '../models/types';
 import {
-  generateBingoCard,
-  INITIAL_OPENED_CELLS,
-  openCell,
   checkBingo,
+  generateBingoCard,
+  getInitialOpenedCells,
+  hasUnopenedCell,
+  normalizeLegacyCardNumbers,
+  normalizeOpenedCells,
+  openCell,
+  openCellByIndex,
+  openCenterCell,
 } from '../lib/bingoCard';
 import { getPrisma } from '../lib/prisma';
 
-/** Singleton in-memory game state */
 let _game: GameState = createEmptyGame();
 
 function createEmptyGame(): GameState {
@@ -25,74 +34,234 @@ function createEmptyGame(): GameState {
     completedRounds: [],
     participants: {},
     bingoWinners: [],
+    customQuestionRequest: null,
   };
+}
+
+function addBingoWinner(participant: ParticipantState, round: RoundState): void {
+  if (participant.hasBingo || !checkBingo(participant.card.openedCells)) {
+    return;
+  }
+
+  participant.hasBingo = true;
+  _game.bingoWinners.push(participant.id);
+  round.newBingoWinners.push(participant.id);
+}
+
+function getRandomUnusedNumber(): number {
+  const allNumbers = Array.from({ length: 75 }, (_, index) => index + 1);
+  const unused = allNumbers.filter((value) => !_game.drawnNumbers.includes(value));
+  if (unused.length === 0) {
+    throw new Error('抽選できる番号がもうありません');
+  }
+
+  return unused[Math.floor(Math.random() * unused.length)];
+}
+
+function getEffectiveBonusRoundType(payload: StartRoundPayload): BonusRoundType {
+  if (payload.bonusRoundType) {
+    return payload.bonusRoundType;
+  }
+  return payload.isBonusRound ? 'MAJORITY' : 'NONE';
+}
+
+function getRoundResultChoice(round: RoundState): VoteChoice | null {
+  if (round.bonusRoundType === 'QUIZ') {
+    return round.correctChoice;
+  }
+  return round.majorityVote;
 }
 
 export function getGame(): GameState {
   return _game;
 }
 
-// ---------------------------------------------------------------------------
-// Participants
-// ---------------------------------------------------------------------------
+export function getCustomQuestionRequest(): CustomQuestionRequestState | null {
+  return _game.customQuestionRequest;
+}
+
+export function listParticipantSummaries(): AdminParticipantSummary[] {
+  return Object.values(_game.participants)
+    .map((participant) => ({
+      id: participant.id,
+      name: participant.name,
+      isNewEmployee: participant.isNewEmployee,
+      connected: participant.socketId !== null,
+    }))
+    .sort((left, right) => {
+      if (left.isNewEmployee !== right.isNewEmployee) {
+        return left.isNewEmployee ? -1 : 1;
+      }
+      return left.name.localeCompare(right.name, 'ja');
+    });
+}
+
+export function requestCustomQuestion(
+  participantId: string,
+): CustomQuestionRequestState {
+  const participant = _game.participants[participantId];
+  if (!participant) {
+    throw new Error('参加者が見つかりません');
+  }
+  if (!participant.isNewEmployee) {
+    throw new Error('質問作成依頼を送れるのは新入社員のみです');
+  }
+  if (!participant.socketId) {
+    throw new Error('選択した参加者は現在オフラインです');
+  }
+  if (_game.currentRound && _game.currentRound.status === 'VOTING') {
+    throw new Error('投票中は質問作成依頼を出せません');
+  }
+  if (_game.customQuestionRequest) {
+    throw new Error(
+      `${_game.customQuestionRequest.participantName}さんがすでに質問を作成中です`,
+    );
+  }
+
+  _game.customQuestionRequest = {
+    participantId: participant.id,
+    participantName: participant.name,
+    requestedAt: new Date().toISOString(),
+  };
+
+  return _game.customQuestionRequest;
+}
+
+export function cancelCustomQuestionRequest(): void {
+  _game.customQuestionRequest = null;
+}
+
+export function requireCustomQuestionRequestTarget(
+  participantId: string,
+): CustomQuestionRequestState {
+  const activeRequest = _game.customQuestionRequest;
+  if (!activeRequest) {
+    throw new Error('現在有効な質問作成依頼がありません');
+  }
+  if (activeRequest.participantId !== participantId) {
+    throw new Error(
+      `現在は${activeRequest.participantName}さんが質問作成担当です`,
+    );
+  }
+
+  return activeRequest;
+}
+
+export function resolveCustomQuestionRequest(participantId: string): void {
+  if (_game.customQuestionRequest?.participantId === participantId) {
+    _game.customQuestionRequest = null;
+  }
+}
 
 export async function registerParticipant(
   name: string,
   sessionId: string,
+  isNewEmployee: boolean,
 ): Promise<ParticipantState> {
-  // Fast path: participant already in memory from this server run.
-  // Update display name if it has changed and persist the change.
   const existing = Object.values(_game.participants).find(
-    (p) => p.sessionId === sessionId,
+    (participant) => participant.sessionId === sessionId,
   );
   if (existing) {
-    if (existing.name !== name) {
+    const prisma = getPrisma();
+    const nextOpenedCells = isNewEmployee
+      ? openCenterCell(existing.card.openedCells)
+      : existing.card.openedCells;
+
+    if (existing.name !== name || existing.isNewEmployee !== isNewEmployee) {
       const previousName = existing.name;
+      const previousIsNewEmployee = existing.isNewEmployee;
       existing.name = name;
-      const prisma = getPrisma();
+      existing.isNewEmployee = isNewEmployee;
+
       await prisma.participant
-        .update({ where: { sessionId }, data: { name } })
-        .catch((err: unknown) => {
-          // Revert in-memory name so memory and DB stay in sync
+        .update({ where: { sessionId }, data: { name, isNewEmployee } })
+        .catch((error: unknown) => {
           existing.name = previousName;
+          existing.isNewEmployee = previousIsNewEmployee;
           console.error(
-            `[registerParticipant] failed to update name for sessionId=${sessionId}:`,
-            err,
+            `[registerParticipant] failed to update participant for sessionId=${sessionId}:`,
+            error,
           );
         });
     }
+
+    if (nextOpenedCells !== existing.card.openedCells) {
+      const previousOpenedCells = existing.card.openedCells;
+      existing.card.openedCells = nextOpenedCells;
+
+      await prisma.bingoCard
+        .updateMany({
+          where: { participantId: existing.id },
+          data: { openedCells: nextOpenedCells },
+        })
+        .catch((error: unknown) => {
+          existing.card.openedCells = previousOpenedCells;
+          console.error(
+            `[registerParticipant] failed to update opened cells for sessionId=${sessionId}:`,
+            error,
+          );
+        });
+    }
+
     return existing;
   }
 
-  // Resolve the canonical DB id *before* registering in memory so the id
-  // never changes once the participant can interact with the game.
   const prisma = getPrisma();
   const dbParticipant = await prisma.participant.upsert({
     where: { sessionId },
-    update: { name },
-    create: { name, sessionId },
-    select: { id: true },
+    update: { name, isNewEmployee },
+    create: { name, sessionId, isNewEmployee },
+    select: { id: true, isNewEmployee: true },
   });
   const id = dbParticipant.id;
 
-  // Load existing card from DB, or generate a fresh one
   const existingCard = await prisma.bingoCard.findUnique({
     where: { participantId: id },
   });
 
   let card: ParticipantState['card'];
   if (existingCard) {
-    card = { numbers: existingCard.numbers, openedCells: existingCard.openedCells };
+    const hadLegacyFreeCenter = existingCard.numbers[12] === 0;
+    const normalizedNumbers = normalizeLegacyCardNumbers(existingCard.numbers);
+    const normalizedMask = normalizeOpenedCells(
+      existingCard.openedCells,
+      dbParticipant.isNewEmployee,
+      hadLegacyFreeCenter,
+    );
+
+    card = {
+      numbers: normalizedNumbers,
+      openedCells: normalizedMask,
+    };
+
+    if (hadLegacyFreeCenter || normalizedMask !== existingCard.openedCells) {
+      await prisma.bingoCard.update({
+        where: { participantId: id },
+        data: {
+          numbers: normalizedNumbers,
+          openedCells: normalizedMask,
+        },
+      });
+    }
   } else {
-    card = { numbers: generateBingoCard(), openedCells: INITIAL_OPENED_CELLS };
-    await prisma.bingoCard
-      .create({ data: { participantId: id, numbers: card.numbers, openedCells: card.openedCells } });
+    card = {
+      numbers: generateBingoCard(),
+      openedCells: getInitialOpenedCells(dbParticipant.isNewEmployee),
+    };
+    await prisma.bingoCard.create({
+      data: {
+        participantId: id,
+        numbers: card.numbers,
+        openedCells: card.openedCells,
+      },
+    });
   }
 
   const participant: ParticipantState = {
     id,
     name,
     sessionId,
+    isNewEmployee: dbParticipant.isNewEmployee,
     socketId: null,
     card,
     currentVote: null,
@@ -103,21 +272,26 @@ export async function registerParticipant(
   return participant;
 }
 
-export function setSocketId(sessionId: string, socketId: string): ParticipantState | null {
-  const p = Object.values(_game.participants).find((p) => p.sessionId === sessionId);
-  if (!p) return null;
-  p.socketId = socketId;
-  return p;
+export function setSocketId(
+  sessionId: string,
+  socketId: string,
+): ParticipantState | null {
+  const participant = Object.values(_game.participants).find(
+    (current) => current.sessionId === sessionId,
+  );
+  if (!participant) return null;
+  participant.socketId = socketId;
+  return participant;
 }
 
 export function disconnectParticipant(socketId: string): void {
-  const p = Object.values(_game.participants).find((p) => p.socketId === socketId);
-  if (p) p.socketId = null;
+  const participant = Object.values(_game.participants).find(
+    (current) => current.socketId === socketId,
+  );
+  if (participant) {
+    participant.socketId = null;
+  }
 }
-
-// ---------------------------------------------------------------------------
-// Game lifecycle
-// ---------------------------------------------------------------------------
 
 export async function startGame(): Promise<void> {
   if (_game.status === 'ACTIVE') return;
@@ -133,10 +307,9 @@ export async function startGame(): Promise<void> {
 
 export async function resetGame(): Promise<void> {
   const prisma = getPrisma();
-  // Clear all persisted state in FK-safe order before resetting memory so
-  // participants can rejoin with a clean slate (no sessionId conflicts).
   await prisma.$transaction([
     prisma.vote.deleteMany(),
+    prisma.customQuestion.deleteMany(),
     prisma.bingoCard.deleteMany(),
     prisma.round.deleteMany(),
     prisma.participant.deleteMany(),
@@ -146,26 +319,45 @@ export async function resetGame(): Promise<void> {
   await prisma.game.create({ data: { id: _game.id, status: 'WAITING' } });
 }
 
-// ---------------------------------------------------------------------------
-// Round lifecycle
-// ---------------------------------------------------------------------------
-
 export interface StartRoundPayload {
   question: string;
   optionA: string;
   optionB: string;
+  questionImageUrl?: string | null;
+  optionAImageUrl?: string | null;
+  optionBImageUrl?: string | null;
+  sourceType?: RoundQuestionSource;
+  preparedQuestionId?: string | null;
+  bonusRoundType?: BonusRoundType;
+  correctChoice?: VoteChoice | null;
+  isBonusRound?: boolean;
 }
 
-/** Draw a random number not yet used and start a new round */
 export async function startRound(payload: StartRoundPayload): Promise<RoundState> {
   if (_game.status !== 'ACTIVE') {
-    throw new Error('Game is not active');
+    throw new Error('ゲームが開始されていません');
   }
   if (_game.currentRound && _game.currentRound.status !== 'COMPLETED') {
-    throw new Error('Previous round is not completed');
+    throw new Error('前のラウンドがまだ完了していません');
+  }
+  if (_game.currentRound?.pendingBonusSelectors.length) {
+    throw new Error('ボーナスマスの選択がまだ完了していません');
+  }
+  if (_game.customQuestionRequest) {
+    throw new Error(
+      `${_game.customQuestionRequest.participantName}さんの質問作成がまだ完了していません`,
+    );
   }
 
-  // Ensure game is in DB
+  const bonusRoundType = getEffectiveBonusRoundType(payload);
+  const isBonusRound = bonusRoundType !== 'NONE';
+  const correctChoice =
+    bonusRoundType === 'QUIZ' ? payload.correctChoice ?? null : null;
+
+  if (bonusRoundType === 'QUIZ' && correctChoice == null) {
+    throw new Error('ボーナス問題では正解を指定してください');
+  }
+
   const prisma = getPrisma();
   await prisma.game.upsert({
     where: { id: _game.id },
@@ -173,20 +365,11 @@ export async function startRound(payload: StartRoundPayload): Promise<RoundState
     create: { id: _game.id, status: 'ACTIVE' },
   });
 
-  // Draw a random unused number from 1-75
-  const allNumbers = Array.from({ length: 75 }, (_, i) => i + 1);
-  const unused = allNumbers.filter((n) => !_game.drawnNumbers.includes(n));
-  if (unused.length === 0) {
-    throw new Error('All numbers have been drawn – game over');
+  for (const participant of Object.values(_game.participants)) {
+    participant.currentVote = null;
   }
 
-  const drawnNumber = unused[Math.floor(Math.random() * unused.length)];
-
-  // Reset participant votes for the new round
-  for (const p of Object.values(_game.participants)) {
-    p.currentVote = null;
-  }
-
+  const drawnNumber = isBonusRound ? 0 : getRandomUnusedNumber();
   const roundNumber = _game.completedRounds.length + 1;
   const roundId = uuidv4();
 
@@ -197,55 +380,73 @@ export async function startRound(payload: StartRoundPayload): Promise<RoundState
     question: payload.question,
     optionA: payload.optionA,
     optionB: payload.optionB,
+    questionImageUrl: payload.questionImageUrl ?? null,
+    optionAImageUrl: payload.optionAImageUrl ?? null,
+    optionBImageUrl: payload.optionBImageUrl ?? null,
+    sourceType: payload.sourceType ?? 'MANUAL',
+    preparedQuestionId: payload.preparedQuestionId ?? null,
+    isBonusRound,
+    bonusRoundType,
+    correctChoice,
     status: 'VOTING',
     majorityVote: null,
     votes: {},
     cellOpeners: [],
     newBingoWinners: [],
+    pendingBonusSelectors: [],
+    bonusSelections: {},
   };
 
-  // Persist round to DB *before* mutating in-memory state so a DB failure
-  // doesn't leave the server believing a round/number was drawn when it wasn't.
+  const roundCreateInput: Prisma.RoundUncheckedCreateInput = {
+    id: roundId,
+    gameId: _game.id,
+    roundNumber,
+    drawnNumber,
+    question: payload.question,
+    optionA: payload.optionA,
+    optionB: payload.optionB,
+    questionImageUrl: payload.questionImageUrl ?? null,
+    optionAImageUrl: payload.optionAImageUrl ?? null,
+    optionBImageUrl: payload.optionBImageUrl ?? null,
+    sourceType: payload.sourceType ?? 'MANUAL',
+    preparedQuestionId: payload.preparedQuestionId ?? null,
+    isBonusRound,
+    bonusRoundType,
+    correctChoice,
+    status: 'VOTING',
+  };
+
   await prisma.round.create({
-    data: {
-      id: roundId,
-      gameId: _game.id,
-      roundNumber,
-      drawnNumber,
-      question: payload.question,
-      optionA: payload.optionA,
-      optionB: payload.optionB,
-      status: 'VOTING',
-    },
+    data: roundCreateInput,
   });
 
-  _game.drawnNumbers.push(drawnNumber);
+  if (!isBonusRound) {
+    _game.drawnNumbers.push(drawnNumber);
+  }
   _game.currentRound = round;
 
   return round;
 }
 
-/** Submit a participant's vote */
 export async function submitVote(
   participantId: string,
   choice: VoteChoice,
 ): Promise<void> {
   if (!_game.currentRound || _game.currentRound.status !== 'VOTING') {
-    throw new Error('Voting is not open');
+    throw new Error('現在は投票を受け付けていません');
   }
 
   const participant = _game.participants[participantId];
-  if (!participant) throw new Error('Participant not found');
-
-  // Only allow one vote per round
+  if (!participant) {
+    throw new Error('参加者が見つかりません');
+  }
   if (_game.currentRound.votes[participantId]) {
-    throw new Error('Already voted');
+    throw new Error('すでに投票済みです');
   }
 
   _game.currentRound.votes[participantId] = choice;
   participant.currentVote = choice;
 
-  // Persist vote
   const prisma = getPrisma();
   await prisma.vote.create({
     data: {
@@ -256,35 +457,51 @@ export async function submitVote(
   });
 }
 
-/** Close voting, compute majority, open cells, check bingo */
 export async function closeVoting(): Promise<RoundState> {
   if (!_game.currentRound || _game.currentRound.status !== 'VOTING') {
-    throw new Error('No active voting round');
+    throw new Error('現在進行中の投票ラウンドがありません');
   }
 
   const round = _game.currentRound;
   round.status = 'CLOSED';
 
-  // Count votes
   let countA = 0;
   let countB = 0;
   for (const choice of Object.values(round.votes)) {
-    if (choice === 'A') countA++;
-    else countB++;
+    if (choice === 'A') {
+      countA += 1;
+    } else {
+      countB += 1;
+    }
   }
 
-  const majority: VoteChoice | null =
+  const majorityVote: VoteChoice | null =
     countA > countB ? 'A' : countB > countA ? 'B' : null;
-  round.majorityVote = majority;
+  round.majorityVote = majorityVote;
 
-  // Open cells for eligible participants
   const prisma = getPrisma();
+  const resultChoice = getRoundResultChoice(round);
 
-  for (const participant of Object.values(_game.participants)) {
-    const voted = round.votes[participant.id];
-    const isEligible = majority !== null && voted === majority;
+  if (round.bonusRoundType !== 'NONE') {
+    round.pendingBonusSelectors = Object.values(_game.participants)
+      .filter((participant) => {
+        const voted = round.votes[participant.id];
+        return (
+          resultChoice !== null &&
+          voted === resultChoice &&
+          hasUnopenedCell(participant.card.openedCells)
+        );
+      })
+      .map((participant) => participant.id);
+  } else {
+    for (const participant of Object.values(_game.participants)) {
+      const voted = round.votes[participant.id];
+      const isEligible = majorityVote !== null && voted === majorityVote;
 
-    if (isEligible) {
+      if (!isEligible) {
+        continue;
+      }
+
       const before = participant.card.openedCells;
       const after = openCell(
         participant.card.numbers,
@@ -296,64 +513,89 @@ export async function closeVoting(): Promise<RoundState> {
         participant.card.openedCells = after;
         round.cellOpeners.push(participant.id);
 
-        // Persist card update
         await prisma.bingoCard
           .updateMany({
             where: { participantId: participant.id },
             data: { openedCells: after },
           })
-          .catch((err: unknown) => {
+          .catch((error: unknown) => {
             console.error(
               `[closeVoting] failed to persist card for participant ${participant.id} in round ${round.id}:`,
-              err,
+              error,
             );
           });
       }
 
-      // Check bingo
-      if (!participant.hasBingo && checkBingo(participant.card.openedCells)) {
-        participant.hasBingo = true;
-        _game.bingoWinners.push(participant.id);
-        round.newBingoWinners.push(participant.id);
-      }
+      addBingoWinner(participant, round);
     }
   }
 
   round.status = 'COMPLETED';
   _game.completedRounds.push(round);
-  // Keep currentRound set to the completed round so socket handlers can
-  // broadcast drawnNumber / majorityVote / cellOpeners to clients immediately
-  // after closeVoting() resolves.  It is overwritten by the next startRound().
 
-  // Persist round final state
   await prisma.round.update({
     where: { id: round.id },
     data: {
       status: 'COMPLETED',
-      majorityVote: majority,
+      majorityVote,
     },
   });
 
   return round;
 }
 
-// ---------------------------------------------------------------------------
-// Persistence helpers
-// ---------------------------------------------------------------------------
+export async function selectBonusCell(
+  participantId: string,
+  cellIndex: number,
+): Promise<RoundState> {
+  const round = _game.currentRound;
+  if (!round || round.status !== 'COMPLETED' || round.bonusRoundType === 'NONE') {
+    throw new Error('現在選択できるボーナスマスはありません');
+  }
 
-// ---------------------------------------------------------------------------
-// Public view helpers
-// ---------------------------------------------------------------------------
+  const participant = _game.participants[participantId];
+  if (!participant) {
+    throw new Error('参加者が見つかりません');
+  }
+  if (!Number.isInteger(cellIndex) || cellIndex < 0 || cellIndex > 24) {
+    throw new Error('選択したマスが不正です');
+  }
+  if (!round.pendingBonusSelectors.includes(participantId)) {
+    if (round.bonusSelections[participantId] != null) {
+      throw new Error('ボーナスマスはすでに選択済みです');
+    }
+    throw new Error('あなたは今回ボーナスマスを選べません');
+  }
+  if ((participant.card.openedCells & (1 << cellIndex)) !== 0) {
+    throw new Error('そのマスはすでに開いています');
+  }
 
-/** Sanitised game state safe to broadcast to all clients */
+  const nextOpenedCells = openCellByIndex(participant.card.openedCells, cellIndex);
+  participant.card.openedCells = nextOpenedCells;
+  round.bonusSelections[participantId] = cellIndex;
+  round.pendingBonusSelectors = round.pendingBonusSelectors.filter(
+    (currentId) => currentId !== participantId,
+  );
+  if (!round.cellOpeners.includes(participantId)) {
+    round.cellOpeners.push(participantId);
+  }
+
+  const prisma = getPrisma();
+  await prisma.bingoCard.updateMany({
+    where: { participantId },
+    data: { openedCells: nextOpenedCells },
+  });
+
+  addBingoWinner(participant, round);
+
+  return round;
+}
+
 export function getPublicGameState() {
   const { participants, currentRound, completedRounds, drawnNumbers, ...rest } = _game;
-
-  // Redact the drawn number from the public payload while voting is still open
-  // so neither the projector nor any observer can learn the number early.
   const isVoting = currentRound?.status === 'VOTING';
   const publicDrawnNumbers = isVoting
-    ? drawnNumbers.filter((n) => n !== currentRound?.drawnNumber)
+    ? drawnNumbers.filter((value) => value !== currentRound?.drawnNumber)
     : drawnNumbers;
 
   return {
@@ -368,51 +610,92 @@ export function getPublicGameState() {
           question: currentRound.question,
           optionA: currentRound.optionA,
           optionB: currentRound.optionB,
+          questionImageUrl: currentRound.questionImageUrl,
+          optionAImageUrl: currentRound.optionAImageUrl,
+          optionBImageUrl: currentRound.optionBImageUrl,
+          sourceType: currentRound.sourceType,
+          isBonusRound: isVoting ? false : currentRound.isBonusRound,
+          bonusRoundType: isVoting ? 'NONE' : currentRound.bonusRoundType,
+          correctChoice: isVoting ? null : currentRound.correctChoice,
           status: currentRound.status,
           majorityVote: currentRound.majorityVote,
           voteCount: Object.keys(currentRound.votes).length,
           cellOpeners: currentRound.cellOpeners,
           newBingoWinners: currentRound.newBingoWinners,
+          bonusSelectionCount: Object.keys(currentRound.bonusSelections).length,
+          pendingBonusSelectorCount: currentRound.pendingBonusSelectors.length,
         }
       : null,
-    completedRounds: completedRounds.map((r) => ({
-      id: r.id,
-      roundNumber: r.roundNumber,
-      drawnNumber: r.drawnNumber,
-      question: r.question,
-      optionA: r.optionA,
-      optionB: r.optionB,
-      majorityVote: r.majorityVote,
-      voteCount: Object.keys(r.votes).length,
+    completedRounds: completedRounds.map((round) => ({
+      id: round.id,
+      roundNumber: round.roundNumber,
+      drawnNumber: round.drawnNumber,
+      question: round.question,
+      optionA: round.optionA,
+      optionB: round.optionB,
+      questionImageUrl: round.questionImageUrl,
+      optionAImageUrl: round.optionAImageUrl,
+      optionBImageUrl: round.optionBImageUrl,
+      sourceType: round.sourceType,
+      isBonusRound: round.isBonusRound,
+      bonusRoundType: round.bonusRoundType,
+      correctChoice: round.correctChoice,
+      majorityVote: round.majorityVote,
+      voteCount: Object.keys(round.votes).length,
+      bonusSelectionCount: Object.keys(round.bonusSelections).length,
+      pendingBonusSelectorCount: round.pendingBonusSelectors.length,
     })),
   };
 }
 
-/** Participant-specific state (includes their card) */
 export function getParticipantView(participantId: string) {
-  const p = _game.participants[participantId];
-  if (!p) return null;
+  const participant = _game.participants[participantId];
+  if (!participant) return null;
 
-  const cr = _game.currentRound;
+  const currentRound = _game.currentRound;
+  const canChooseBonusCell =
+    !!currentRound &&
+    currentRound.bonusRoundType !== 'NONE' &&
+    currentRound.status === 'COMPLETED' &&
+    currentRound.pendingBonusSelectors.includes(participantId);
+
   return {
-    id: p.id,
-    name: p.name,
-    hasBingo: p.hasBingo,
-    card: p.card,
-    currentVote: p.currentVote,
-    currentRound: cr
+    id: participant.id,
+    name: participant.name,
+    isNewEmployee: participant.isNewEmployee,
+    hasBingo: participant.hasBingo,
+    card: participant.card,
+    currentVote: participant.currentVote,
+    canChooseBonusCell,
+    customQuestionRequest: _game.customQuestionRequest,
+    currentRound: currentRound
       ? {
-          id: cr.id,
-          roundNumber: cr.roundNumber,
-          drawnNumber: cr.status !== 'VOTING' ? cr.drawnNumber : null,
-          question: cr.question,
-          optionA: cr.optionA,
-          optionB: cr.optionB,
-          status: cr.status,
-          majorityVote: cr.majorityVote,
-          voteCount: Object.keys(cr.votes).length,
-          myVote: cr.votes[participantId] ?? null,
-          cellOpeners: cr.cellOpeners,
+          id: currentRound.id,
+          roundNumber: currentRound.roundNumber,
+          drawnNumber:
+            currentRound.status !== 'VOTING' ? currentRound.drawnNumber : null,
+          question: currentRound.question,
+          optionA: currentRound.optionA,
+          optionB: currentRound.optionB,
+          questionImageUrl: currentRound.questionImageUrl,
+          optionAImageUrl: currentRound.optionAImageUrl,
+          optionBImageUrl: currentRound.optionBImageUrl,
+          sourceType: currentRound.sourceType,
+          isBonusRound:
+            currentRound.status === 'VOTING' ? false : currentRound.isBonusRound,
+          bonusRoundType:
+            currentRound.status === 'VOTING' ? 'NONE' : currentRound.bonusRoundType,
+          correctChoice:
+            currentRound.status === 'VOTING' ? null : currentRound.correctChoice,
+          status: currentRound.status,
+          majorityVote: currentRound.majorityVote,
+          voteCount: Object.keys(currentRound.votes).length,
+          myVote: currentRound.votes[participantId] ?? null,
+          cellOpeners: currentRound.cellOpeners,
+          myBonusSelectionCellIndex:
+            currentRound.bonusSelections[participantId] ?? null,
+          bonusSelectionCount: Object.keys(currentRound.bonusSelections).length,
+          pendingBonusSelectorCount: currentRound.pendingBonusSelectors.length,
         }
       : null,
   };
