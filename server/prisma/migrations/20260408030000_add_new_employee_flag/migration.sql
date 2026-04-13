@@ -1,0 +1,2 @@
+ALTER TABLE "Participant"
+ADD COLUMN "isNewEmployee" BOOLEAN NOT NULL DEFAULT false;

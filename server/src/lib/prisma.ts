@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 
-let prisma: PrismaClient;
+let prisma: PrismaClient | null = null;
 
 export function getPrisma(): PrismaClient {
   if (!prisma) {
@@ -9,4 +9,8 @@ export function getPrisma(): PrismaClient {
     });
   }
   return prisma;
+}
+
+export function setPrismaForTesting(prismaClient: PrismaClient | null): void {
+  prisma = prismaClient;
 }

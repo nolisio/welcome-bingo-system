@@ -5,6 +5,9 @@ WORKDIR /app
 ARG NEXT_PUBLIC_SERVER_URL=http://localhost:4000
 ENV NEXT_PUBLIC_SERVER_URL=$NEXT_PUBLIC_SERVER_URL
 
+# Keep the runtime COPY stable even when the repo has no public assets yet.
+RUN mkdir -p public
+
 COPY package*.json ./
 RUN npm install
 

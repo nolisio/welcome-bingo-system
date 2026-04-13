@@ -9,41 +9,53 @@ interface BingoCardProps {
   card: BingoCardState;
   highlightNumber?: number | null;
   size?: 'sm' | 'md' | 'lg';
+  selectableCellIndexes?: number[];
+  selectedCellIndex?: number | null;
+  onCellClick?: (cellIndex: number) => void;
 }
 
 export default function BingoCard({
   card,
   highlightNumber,
   size = 'md',
+  selectableCellIndexes = [],
+  selectedCellIndex = null,
+  onCellClick,
 }: BingoCardProps) {
   const { numbers, openedCells } = card;
+  const selectableSet = new Set(selectableCellIndexes);
+  const selectedNumber = selectedCellIndex != null ? numbers[selectedCellIndex] : null;
 
   const isCellOpen = (idx: number) => (openedCells & (1 << idx)) !== 0;
-  const isFree = (idx: number) => idx === 12; // center cell
 
   const styles = {
     sm: {
+      shell: 'rounded-[1.25rem] p-2.5',
       wrapper: 'gap-1',
-      headers: 'text-xl',
-      cell: 'text-sm',
-      free: 'text-[9px]',
+      headers: 'text-lg',
+      cell: 'text-xs sm:text-sm',
     },
     md: {
+      shell: 'rounded-[1.5rem] p-3',
       wrapper: 'gap-1.5',
       headers: 'text-2xl',
       cell: 'text-lg',
-      free: 'text-[10px]',
     },
     lg: {
+      shell: 'rounded-[1.75rem] p-4',
       wrapper: 'gap-2',
       headers: 'text-[2rem]',
       cell: 'text-xl',
-      free: 'text-xs',
     },
   }[size];
 
   return (
-    <div className="w-full select-none rounded-[1.5rem] border-4 border-[#690dab]/30 bg-[#690dab]/10 p-3 shadow-[0_24px_70px_rgba(105,13,171,0.28)]">
+    <div
+      className={clsx(
+        'w-full select-none border-4 border-[#690dab]/30 bg-[#690dab]/10 shadow-[0_24px_70px_rgba(105,13,171,0.28)]',
+        styles.shell,
+      )}
+    >
       <div className={clsx('mb-2 grid grid-cols-5', styles.wrapper)}>
         {COLUMNS.map((col) => (
           <div
@@ -62,20 +74,32 @@ export default function BingoCard({
         {Array.from({ length: 25 }, (_, idx) => {
           const num = numbers[idx];
           const opened = isCellOpen(idx);
-          const free = isFree(idx);
-          const isHighlighted = !free && num === highlightNumber;
+          const isHighlighted = num === highlightNumber;
+          const isSelectable = selectableSet.has(idx) && !opened;
+          const isSelected = selectedCellIndex === idx;
 
           return (
-            <div
+            <button
               key={idx}
+              type="button"
+              onClick={() => {
+                if (isSelectable && onCellClick) {
+                  onCellClick(idx);
+                }
+              }}
+              disabled={!isSelectable}
               className={clsx(
                 'flex aspect-square items-center justify-center rounded-xl border text-center font-bold transition-all duration-300',
                 styles.cell,
+                isSelectable && 'cursor-pointer hover:-translate-y-0.5 hover:shadow-[0_12px_24px_rgba(0,0,0,0.22)]',
+                !isSelectable && 'cursor-default',
                 opened
                   ? 'border-[#690dab] bg-[#690dab] text-white shadow-[0_0_18px_rgba(105,13,171,0.55)] ring-2 ring-[#690dab]/30'
                   : 'border-white/10 bg-[#241630] text-slate-200',
-                free &&
-                  'flex-col border-dashed border-[#c084fc]/60 bg-[#690dab]/20 font-black text-[#d8b4fe]',
+                isSelectable &&
+                  'border-amber-300/70 bg-amber-300/10 text-white ring-2 ring-amber-300/25',
+                isSelected &&
+                  'border-emerald-300 bg-emerald-500/20 text-white ring-2 ring-emerald-300 shadow-[0_0_22px_rgba(110,231,183,0.35)]',
                 isHighlighted &&
                   !opened &&
                   'border-[#c084fc]/60 bg-[#31203d] text-white ring-2 ring-[#690dab]/35',
@@ -84,20 +108,22 @@ export default function BingoCard({
                   'ring-2 ring-emerald-400/80 shadow-[0_0_22px_rgba(52,211,153,0.35)]',
               )}
             >
-              {free ? (
-                <>
-                  <span className="text-base leading-none">★</span>
-                  <span className={clsx('mt-1 block font-black tracking-[0.12em]', styles.free)}>
-                    フリー
-                  </span>
-                </>
-              ) : (
-                num
-              )}
-            </div>
+              {num}
+            </button>
           );
         })}
       </div>
+
+      {selectedNumber != null && selectableCellIndexes.length > 0 && (
+        <div className="mt-3 rounded-xl border border-emerald-300/25 bg-emerald-500/10 px-4 py-3 text-center shadow-[0_10px_24px_rgba(0,0,0,0.14)]">
+          <p className="text-[11px] font-semibold tracking-[0.08em] text-emerald-200">
+            現在の選択
+          </p>
+          <p className="mt-1 text-base font-semibold text-white">
+            {selectedNumber}番を開けます
+          </p>
+        </div>
+      )}
     </div>
   );
 }
