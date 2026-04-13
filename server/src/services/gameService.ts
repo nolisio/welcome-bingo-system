@@ -583,6 +583,15 @@ export async function selectBonusCell(
   }
 
   const nextOpenedCells = openCellByIndex(participant.card.openedCells, cellIndex);
+  const prisma = getPrisma();
+  const updateResult = await prisma.bingoCard.updateMany({
+    where: { participantId },
+    data: { openedCells: nextOpenedCells },
+  });
+  if (updateResult.count !== 1) {
+    throw new Error('ボーナスマスの更新に失敗しました');
+  }
+
   participant.card.openedCells = nextOpenedCells;
   round.bonusSelections[participantId] = cellIndex;
   round.pendingBonusSelectors = round.pendingBonusSelectors.filter(
@@ -591,12 +600,6 @@ export async function selectBonusCell(
   if (!round.cellOpeners.includes(participantId)) {
     round.cellOpeners.push(participantId);
   }
-
-  const prisma = getPrisma();
-  await prisma.bingoCard.updateMany({
-    where: { participantId },
-    data: { openedCells: nextOpenedCells },
-  });
 
   addBingoWinner(participant, round);
 

@@ -42,6 +42,8 @@ router.get('/game/rounds', (_req: Request, res: Response) => {
       optionA: r.optionA,
       optionB: r.optionB,
       questionImageUrl: r.questionImageUrl,
+      optionAImageUrl: r.optionAImageUrl,
+      optionBImageUrl: r.optionBImageUrl,
       sourceType: r.sourceType,
       majorityVote: r.majorityVote,
       voteCount: Object.keys(r.votes).length,

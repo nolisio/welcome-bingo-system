@@ -64,7 +64,7 @@ model Round {
   sourceType   RoundQuestionSource @default(MANUAL)
   preparedQuestionId String?
   isBonusRound Boolean @default(false)
-  bonusRoundType String @default("NONE")
+  bonusRoundType BonusRoundType @default(NONE)
   correctChoice String?
   status       RoundStatus @default(VOTING)
   majorityVote String?     // "A" | "B" | null if tie
@@ -87,6 +87,12 @@ enum RoundStatus {
 enum RoundQuestionSource {
   MANUAL
   POOL
+}
+
+enum BonusRoundType {
+  NONE
+  MAJORITY
+  QUIZ
 }
 
 model Vote {
