@@ -32,7 +32,13 @@ type BingoCardRow = {
   updatedAt: Date;
 };
 
-function createMockPrisma(): PrismaClient {
+type MockPrismaClient = PrismaClient & {
+  __controls: {
+    failNextBingoCardUpdate: boolean;
+  };
+};
+
+function createMockPrisma(): MockPrismaClient {
   const participantsById = new Map<string, ParticipantRow>();
   const participantsBySessionId = new Map<string, string>();
   const bingoCardsByParticipantId = new Map<string, BingoCardRow>();
@@ -40,6 +46,9 @@ function createMockPrisma(): PrismaClient {
   const roundsById = new Map<string, Record<string, unknown>>();
   const votesById = new Map<string, Record<string, unknown>>();
   let customQuestionCount = 0;
+  const controls = {
+    failNextBingoCardUpdate: false,
+  };
 
   const prisma = {
     participant: {
@@ -147,6 +156,11 @@ function createMockPrisma(): PrismaClient {
         where: { participantId: string };
         data: { openedCells: number };
       }) {
+        if (controls.failNextBingoCardUpdate) {
+          controls.failNextBingoCardUpdate = false;
+          throw new Error('mocked bingo card persistence failure');
+        }
+
         const row = bingoCardsByParticipantId.get(where.participantId);
         if (!row) {
           return { count: 0 };
@@ -243,11 +257,17 @@ function createMockPrisma(): PrismaClient {
     },
   };
 
-  return prisma as unknown as PrismaClient;
+  return {
+    ...(prisma as unknown as PrismaClient),
+    __controls: controls,
+  } as MockPrismaClient;
 }
 
+let mockPrisma: MockPrismaClient;
+
 beforeEach(async () => {
-  setPrismaForTesting(createMockPrisma());
+  mockPrisma = createMockPrisma();
+  setPrismaForTesting(mockPrisma);
   await resetGame();
 });
 
@@ -352,4 +372,39 @@ test('通常ラウンドからボーナス問題、質問依頼まで一連の�
   const request = requestCustomQuestion(newEmployee.id);
   assert.equal(request.participantId, newEmployee.id);
   assert.equal(request.participantName, newEmployee.name);
+});
+
+test('ボーナスマスの永続化に失敗した場合は in-memory 状態を更新しない', async () => {
+  const participant = await registerParticipant('伊藤', 'session-ito', true);
+  setSocketId('session-ito', 'socket-ito');
+
+  await startGame();
+  await startRound({
+    question: 'ボーナスタイムの永続化確認',
+    optionA: 'A',
+    optionB: 'B',
+    bonusRoundType: 'MAJORITY',
+  });
+  await submitVote(participant.id, 'A');
+  await closeVoting();
+
+  const beforeSelection = getParticipantView(participant.id);
+  assert.ok(beforeSelection);
+  const selectableCellIndex = findSelectableCellIndex(beforeSelection.card.openedCells);
+
+  mockPrisma.__controls.failNextBingoCardUpdate = true;
+
+  await assert.rejects(
+    () => selectBonusCell(participant.id, selectableCellIndex),
+    /mocked bingo card persistence failure/,
+  );
+
+  const afterFailure = getParticipantView(participant.id);
+  assert.ok(afterFailure);
+  assert.equal(afterFailure.currentRound?.pendingBonusSelectorCount, 1);
+  assert.equal(afterFailure.currentRound?.myBonusSelectionCellIndex, null);
+  assert.equal(
+    afterFailure.card.openedCells,
+    beforeSelection.card.openedCells,
+  );
 });
