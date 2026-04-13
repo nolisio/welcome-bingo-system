@@ -88,6 +88,7 @@ const QUESTION_SAMPLE_PRESETS = [
 export default function AdminPage() {
   const [secret, setSecret] = useState('');
   const [authed, setAuthed] = useState(false);
+  const [authError, setAuthError] = useState('');
   const [connected, setConnected] = useState(false);
   const [gameState, setGameState] = useState<PublicGameState | null>(null);
   const [participants, setParticipants] = useState<AdminParticipantSummary[]>([]);
@@ -192,6 +193,31 @@ export default function AdminPage() {
   const showFeedback = (message: string) => {
     setFeedback(message);
     setTimeout(() => setFeedback(''), 3000);
+  };
+
+  const handleLogin = () => {
+    if (!secret.trim()) {
+      setAuthError('管理者キーを入力してください。');
+      return;
+    }
+    if (!connected) {
+      setAuthError('サーバーへ接続してから再度お試しください。');
+      return;
+    }
+
+    const socket = getSocket();
+    setLoading(true);
+    socket.emit('admin:subscribe', { secret }, (res: any) => {
+      setLoading(false);
+      if (res?.ok) {
+        setAuthError('');
+        setAuthed(true);
+        return;
+      }
+
+      setAuthed(false);
+      setAuthError(res?.error ?? '管理者認証に失敗しました。');
+    });
   };
 
   const emitAdmin = (event: string, data: object, cb?: (res: any) => void) => {
@@ -420,17 +446,26 @@ export default function AdminPage() {
           <input
             type="password"
             value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && setAuthed(true)}
+            onChange={(e) => {
+              setSecret(e.target.value);
+              setAuthError('');
+            }}
+            onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
             placeholder="管理者キー"
             className="mb-4 w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-lg focus:border-blue-500 focus:outline-none"
           />
           <button
-            onClick={() => setAuthed(true)}
-            className="w-full rounded-xl bg-blue-600 py-3 font-bold text-white"
+            onClick={handleLogin}
+            disabled={loading || !connected}
+            className="w-full rounded-xl bg-blue-600 py-3 font-bold text-white disabled:bg-gray-400"
           >
-            入室
+            {loading ? '確認中...' : connected ? '入室' : '接続中...'}
           </button>
+          {authError && (
+            <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              {authError}
+            </p>
+          )}
         </div>
       </main>
     );
