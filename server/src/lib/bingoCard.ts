@@ -64,6 +64,10 @@ export function openCenterCell(openedCells: number): number {
   return openedCells | CENTER_CELL_BIT;
 }
 
+export function closeCenterCell(openedCells: number): number {
+  return openedCells & ~CENTER_CELL_BIT;
+}
+
 /**
  * Legacy cards used 0 in the center as a free cell. Replace that placeholder
  * with an unused N-column number so old cards remain playable under the new rule.

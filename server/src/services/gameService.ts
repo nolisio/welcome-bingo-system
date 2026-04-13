@@ -11,6 +11,7 @@ import {
   VoteChoice,
 } from '../models/types';
 import {
+  closeCenterCell,
   checkBingo,
   generateBingoCard,
   getInitialOpenedCells,
@@ -80,6 +81,10 @@ export function getCustomQuestionRequest(): CustomQuestionRequestState | null {
   return _game.customQuestionRequest;
 }
 
+function hasStartedRoundProgress(): boolean {
+  return _game.currentRound !== null || _game.completedRounds.length > 0;
+}
+
 export function listParticipantSummaries(): AdminParticipantSummary[] {
   return Object.values(_game.participants)
     .map((participant) => ({
@@ -111,6 +116,9 @@ export function requestCustomQuestion(
   }
   if (_game.currentRound && _game.currentRound.status === 'VOTING') {
     throw new Error('投票中は質問作成依頼を出せません');
+  }
+  if (_game.currentRound?.pendingBonusSelectors.length) {
+    throw new Error('ボーナスマスの選択が完了するまで質問作成依頼は出せません');
   }
   if (_game.customQuestionRequest) {
     throw new Error(
@@ -163,9 +171,13 @@ export async function registerParticipant(
   );
   if (existing) {
     const prisma = getPrisma();
+    if (existing.isNewEmployee !== isNewEmployee && hasStartedRoundProgress()) {
+      throw new Error('ラウンド開始後は新入社員設定を変更できません');
+    }
+
     const nextOpenedCells = isNewEmployee
       ? openCenterCell(existing.card.openedCells)
-      : existing.card.openedCells;
+      : closeCenterCell(existing.card.openedCells);
 
     if (existing.name !== name || existing.isNewEmployee !== isNewEmployee) {
       const previousName = existing.name;
