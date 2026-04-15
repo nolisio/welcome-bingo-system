@@ -1,14 +1,26 @@
-import { PreparedQuestionRecord } from '../models/types';
+import { PreparedQuestionKind, PreparedQuestionRecord, VoteChoice } from '../models/types';
 import { getPrisma } from '../lib/prisma';
 
-interface PreparedQuestionPayload {
+export interface PreparedQuestionPayload {
+  slug?: string;
+  kind?: PreparedQuestionKind;
   question: string;
   optionA: string;
   optionB: string;
   imageUrl?: string | null;
   optionAImageUrl?: string | null;
   optionBImageUrl?: string | null;
+  correctChoice?: VoteChoice | null;
+  isActive?: boolean;
 }
+
+interface SyncPreparedQuestionsResult {
+  createdCount: number;
+  updatedCount: number;
+  questions: PreparedQuestionRecord[];
+}
+
+const MAX_CREATE_RETRIES = 5;
 
 function sanitizeField(value: string, label: string, maxLength: number): string {
   const trimmed = value.trim();
@@ -30,29 +42,161 @@ function sanitizeImageUrl(value: string | null | undefined): string | null {
   return trimmed;
 }
 
+function sanitizeKind(kind: PreparedQuestionKind | undefined): PreparedQuestionKind {
+  return kind ?? 'MAJORITY';
+}
+
+function sanitizeCorrectChoice(
+  kind: PreparedQuestionKind,
+  value: VoteChoice | null | undefined,
+): VoteChoice | null {
+  if (kind === 'QUIZ') {
+    if (value !== 'A' && value !== 'B') {
+      throw new Error('クイズ問題では正解をAまたはBで指定してください');
+    }
+    return value;
+  }
+
+  return null;
+}
+
+function slugify(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function sanitizeSlug(value: string | undefined, fallbackQuestion: string): string {
+  const base = value?.trim() || slugify(fallbackQuestion);
+  if (!base) {
+    return `prepared-${Date.now()}`;
+  }
+  if (base.length > 80) {
+    throw new Error('問題コードは80文字以内で指定してください');
+  }
+  return base;
+}
+
+function getNextSlugRetryBase(baseSlug: string, currentSlug: string): string {
+  if (currentSlug === baseSlug) {
+    return `${baseSlug}-2`;
+  }
+
+  const escapedBase = baseSlug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = currentSlug.match(new RegExp(`^${escapedBase}-(\\d+)$`));
+
+  if (!match) {
+    return `${baseSlug}-2`;
+  }
+
+  return `${baseSlug}-${Number(match[1]) + 1}`;
+}
+
+function isSlugUniqueConstraintError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  if (!('code' in error) || error.code !== 'P2002') {
+    return false;
+  }
+
+  const meta = 'meta' in error ? error.meta : undefined;
+  const target =
+    meta && typeof meta === 'object' && 'target' in meta ? meta.target : undefined;
+  return Array.isArray(target) && target.includes('slug');
+}
+
+async function reservePreparedQuestionSlug(baseSlug: string): Promise<string> {
+  const prisma = getPrisma();
+  const existing = await prisma.preparedQuestion.findMany({
+    where: {
+      slug: {
+        startsWith: baseSlug,
+      },
+    },
+    select: { slug: true },
+  });
+
+  const used = new Set(existing.map((item) => item.slug));
+  if (!used.has(baseSlug)) {
+    return baseSlug;
+  }
+
+  let suffix = 2;
+  while (used.has(`${baseSlug}-${suffix}`)) {
+    suffix += 1;
+  }
+
+  return `${baseSlug}-${suffix}`;
+}
+
+function normalizePreparedQuestionPayload(
+  payload: PreparedQuestionPayload,
+): Required<
+  Pick<
+    PreparedQuestionPayload,
+    'question' | 'optionA' | 'optionB' | 'kind' | 'correctChoice' | 'isActive'
+  >
+> & {
+  slug: string;
+  imageUrl: string | null;
+  optionAImageUrl: string | null;
+  optionBImageUrl: string | null;
+} {
+  const question = sanitizeField(payload.question, '質問文', 120);
+  const kind = sanitizeKind(payload.kind);
+
+  return {
+    slug: sanitizeSlug(payload.slug, question),
+    kind,
+    question,
+    optionA: sanitizeField(payload.optionA, '選択肢A', 40),
+    optionB: sanitizeField(payload.optionB, '選択肢B', 40),
+    imageUrl: sanitizeImageUrl(payload.imageUrl),
+    optionAImageUrl: sanitizeImageUrl(payload.optionAImageUrl),
+    optionBImageUrl: sanitizeImageUrl(payload.optionBImageUrl),
+    correctChoice: sanitizeCorrectChoice(kind, payload.correctChoice),
+    isActive: payload.isActive ?? true,
+  };
+}
+
 function toRecord(question: {
   id: string;
+  slug: string;
+  kind: PreparedQuestionKind;
   question: string;
   optionA: string;
   optionB: string;
   imageUrl: string | null;
   optionAImageUrl: string | null;
   optionBImageUrl: string | null;
+  correctChoice: string | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
   rounds: { gameId: string }[];
-}, currentGameId: string): PreparedQuestionRecord {
+}, currentGameId?: string): PreparedQuestionRecord {
   return {
     id: question.id,
+    slug: question.slug,
+    kind: question.kind,
     question: question.question,
     optionA: question.optionA,
     optionB: question.optionB,
     imageUrl: question.imageUrl,
     optionAImageUrl: question.optionAImageUrl,
     optionBImageUrl: question.optionBImageUrl,
+    correctChoice:
+      question.correctChoice === 'A' || question.correctChoice === 'B'
+        ? question.correctChoice
+        : null,
     isActive: question.isActive,
-    usedInCurrentGame: question.rounds.some((round) => round.gameId === currentGameId),
+    usedInCurrentGame: currentGameId
+      ? question.rounds.some((round) => round.gameId === currentGameId)
+      : false,
     totalUseCount: question.rounds.length,
     createdAt: question.createdAt.toISOString(),
     updatedAt: question.updatedAt.toISOString(),
@@ -64,23 +208,45 @@ export async function createPreparedQuestion(
   currentGameId: string,
 ): Promise<PreparedQuestionRecord> {
   const prisma = getPrisma();
-  const created = await prisma.preparedQuestion.create({
-    data: {
-      question: sanitizeField(payload.question, '質問文', 120),
-      optionA: sanitizeField(payload.optionA, '選択肢A', 40),
-      optionB: sanitizeField(payload.optionB, '選択肢B', 40),
-      imageUrl: sanitizeImageUrl(payload.imageUrl),
-      optionAImageUrl: sanitizeImageUrl(payload.optionAImageUrl),
-      optionBImageUrl: sanitizeImageUrl(payload.optionBImageUrl),
-    },
-    include: {
-      rounds: {
-        select: { gameId: true },
-      },
-    },
-  });
+  const normalized = normalizePreparedQuestionPayload(payload);
 
-  return toRecord(created, currentGameId);
+  let candidateSlug = await reservePreparedQuestionSlug(normalized.slug);
+
+  for (let attempt = 0; attempt < MAX_CREATE_RETRIES; attempt += 1) {
+    try {
+      const created = await prisma.preparedQuestion.create({
+        data: {
+          slug: candidateSlug,
+          kind: normalized.kind,
+          question: normalized.question,
+          optionA: normalized.optionA,
+          optionB: normalized.optionB,
+          imageUrl: normalized.imageUrl,
+          optionAImageUrl: normalized.optionAImageUrl,
+          optionBImageUrl: normalized.optionBImageUrl,
+          correctChoice: normalized.correctChoice,
+          isActive: normalized.isActive,
+        },
+        include: {
+          rounds: {
+            select: { gameId: true },
+          },
+        },
+      });
+
+      return toRecord(created, currentGameId);
+    } catch (error) {
+      if (!isSlugUniqueConstraintError(error) || attempt === MAX_CREATE_RETRIES - 1) {
+        throw error;
+      }
+
+      candidateSlug = await reservePreparedQuestionSlug(
+        getNextSlugRetryBase(normalized.slug, candidateSlug),
+      );
+    }
+  }
+
+  throw new Error('質問プールの登録に失敗しました');
 }
 
 export async function listPreparedQuestions(
@@ -94,6 +260,7 @@ export async function listPreparedQuestions(
       },
     },
     orderBy: [
+      { kind: 'asc' },
       { isActive: 'desc' },
       { updatedAt: 'desc' },
     ],
@@ -123,6 +290,7 @@ export async function setPreparedQuestionActive(
 
 export async function getRandomUnusedPreparedQuestion(
   currentGameId: string,
+  kind: PreparedQuestionKind = 'MAJORITY',
 ): Promise<PreparedQuestionRecord> {
   const prisma = getPrisma();
   const usedRoundLinks = await prisma.round.findMany({
@@ -138,6 +306,7 @@ export async function getRandomUnusedPreparedQuestion(
 
   const candidates = await prisma.preparedQuestion.findMany({
     where: {
+      kind,
       isActive: true,
       ...(usedIds.length > 0 ? { id: { notIn: usedIds } } : {}),
     },
@@ -149,9 +318,74 @@ export async function getRandomUnusedPreparedQuestion(
   });
 
   if (candidates.length === 0) {
-    throw new Error('このゲームで使える未使用の質問プールがありません');
+    const kindLabel = kind === 'QUIZ' ? 'クイズ問題' : '多数派質問';
+    throw new Error(`このゲームで使える未使用の${kindLabel}プールがありません`);
   }
 
   const selected = candidates[Math.floor(Math.random() * candidates.length)];
   return toRecord(selected, currentGameId);
+}
+
+export async function syncPreparedQuestions(
+  payloads: PreparedQuestionPayload[],
+  currentGameId?: string,
+): Promise<SyncPreparedQuestionsResult> {
+  const prisma = getPrisma();
+  const questions: PreparedQuestionRecord[] = [];
+  let createdCount = 0;
+  let updatedCount = 0;
+
+  for (const payload of payloads) {
+    const normalized = normalizePreparedQuestionPayload(payload);
+    const existing = await prisma.preparedQuestion.findUnique({
+      where: { slug: normalized.slug },
+      select: { id: true },
+    });
+
+    const question = await prisma.preparedQuestion.upsert({
+      where: { slug: normalized.slug },
+      update: {
+        kind: normalized.kind,
+        question: normalized.question,
+        optionA: normalized.optionA,
+        optionB: normalized.optionB,
+        imageUrl: normalized.imageUrl,
+        optionAImageUrl: normalized.optionAImageUrl,
+        optionBImageUrl: normalized.optionBImageUrl,
+        correctChoice: normalized.correctChoice,
+        isActive: normalized.isActive,
+      },
+      create: {
+        slug: normalized.slug,
+        kind: normalized.kind,
+        question: normalized.question,
+        optionA: normalized.optionA,
+        optionB: normalized.optionB,
+        imageUrl: normalized.imageUrl,
+        optionAImageUrl: normalized.optionAImageUrl,
+        optionBImageUrl: normalized.optionBImageUrl,
+        correctChoice: normalized.correctChoice,
+        isActive: normalized.isActive,
+      },
+      include: {
+        rounds: {
+          select: { gameId: true },
+        },
+      },
+    });
+
+    if (existing) {
+      updatedCount += 1;
+    } else {
+      createdCount += 1;
+    }
+
+    questions.push(toRecord(question, currentGameId));
+  }
+
+  return {
+    createdCount,
+    updatedCount,
+    questions,
+  };
 }

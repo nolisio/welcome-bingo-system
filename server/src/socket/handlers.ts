@@ -414,12 +414,14 @@ export function registerSocketHandlers(io: Server): void {
       async (
         data: {
           secret: string;
+          kind?: 'MAJORITY' | 'QUIZ';
           question: string;
           optionA: string;
           optionB: string;
           imageUrl?: string | null;
           optionAImageUrl?: string | null;
           optionBImageUrl?: string | null;
+          correctChoice?: 'A' | 'B' | null;
         },
         ack?: Function,
       ) => {
@@ -434,9 +436,11 @@ export function registerSocketHandlers(io: Server): void {
               question: data.question,
               optionA: data.optionA,
               optionB: data.optionB,
+              kind: data.kind,
               imageUrl: data.imageUrl,
               optionAImageUrl: data.optionAImageUrl,
               optionBImageUrl: data.optionBImageUrl,
+              correctChoice: data.correctChoice,
             },
             getGame().id,
           );
@@ -535,7 +539,10 @@ export function registerSocketHandlers(io: Server): void {
             return;
           }
 
-          const preparedQuestion = await getRandomUnusedPreparedQuestion(getGame().id);
+          const preparedQuestion = await getRandomUnusedPreparedQuestion(
+            getGame().id,
+            'MAJORITY',
+          );
           const round = await startRound({
             question: preparedQuestion.question,
             optionA: preparedQuestion.optionA,

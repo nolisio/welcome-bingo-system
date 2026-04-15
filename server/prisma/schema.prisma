@@ -130,15 +130,23 @@ enum CustomQuestionStatus {
 
 model PreparedQuestion {
   id        String   @id @default(uuid())
+  slug      String   @unique
+  kind      PreparedQuestionKind @default(MAJORITY)
   question  String
   optionA   String
   optionB   String
   imageUrl  String?
   optionAImageUrl String?
   optionBImageUrl String?
+  correctChoice String?
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   rounds Round[]
+}
+
+enum PreparedQuestionKind {
+  MAJORITY
+  QUIZ
 }
