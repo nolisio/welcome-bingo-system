@@ -697,7 +697,7 @@ export default function AdminPage() {
               tone={isVoting ? 'amber' : 'default'}
             />
             <AdminMetricCard
-              label="未使用問題"
+              label="未使用の多数派質問"
               value={`${availableRandomPreparedQuestions.length}件`}
               detail={`多数派 ${activeMajorityPreparedQuestions.length}件 / クイズ ${activeQuizPreparedQuestions.length}件 / 総数 ${preparedQuestions.length}件`}
               tone="sky"
@@ -912,7 +912,7 @@ export default function AdminPage() {
                 有効 {activePreparedQuestions.length}
               </span>
               <span className="rounded-full bg-gray-800 px-3 py-1">
-                未使用 {availablePreparedQuestions.length}
+                未使用(全種別) {availablePreparedQuestions.length}
               </span>
               <span className="rounded-full bg-gray-800 px-3 py-1">
                 多数派 {activeMajorityPreparedQuestions.length}

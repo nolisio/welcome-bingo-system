@@ -1,11 +1,10 @@
 import 'dotenv/config';
 import { preparedQuestionSeeds } from '../data/preparedQuestions';
-import { getGame } from '../services/gameService';
 import { syncPreparedQuestions } from '../services/preparedQuestionService';
 import { getPrisma } from '../lib/prisma';
 
 async function main(): Promise<void> {
-  const result = await syncPreparedQuestions(preparedQuestionSeeds, getGame().id);
+  const result = await syncPreparedQuestions(preparedQuestionSeeds);
 
   console.log(
     `[prepared-question-sync] created=${result.createdCount} updated=${result.updatedCount} total=${result.questions.length}`,

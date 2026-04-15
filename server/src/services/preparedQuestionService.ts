@@ -1,8 +1,4 @@
-import {
-  PreparedQuestionKind,
-  PreparedQuestionRecord,
-  VoteChoice,
-} from '../models/types';
+import { PreparedQuestionKind, PreparedQuestionRecord, VoteChoice } from '../models/types';
 import { getPrisma } from '../lib/prisma';
 
 export interface PreparedQuestionPayload {
@@ -23,6 +19,8 @@ interface SyncPreparedQuestionsResult {
   updatedCount: number;
   questions: PreparedQuestionRecord[];
 }
+
+const MAX_CREATE_RETRIES = 5;
 
 function sanitizeField(value: string, label: string, maxLength: number): string {
   const trimmed = value.trim();
@@ -79,6 +77,36 @@ function sanitizeSlug(value: string | undefined, fallbackQuestion: string): stri
     throw new Error('問題コードは80文字以内で指定してください');
   }
   return base;
+}
+
+function getNextSlugRetryBase(baseSlug: string, currentSlug: string): string {
+  if (currentSlug === baseSlug) {
+    return `${baseSlug}-2`;
+  }
+
+  const escapedBase = baseSlug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = currentSlug.match(new RegExp(`^${escapedBase}-(\\d+)$`));
+
+  if (!match) {
+    return `${baseSlug}-2`;
+  }
+
+  return `${baseSlug}-${Number(match[1]) + 1}`;
+}
+
+function isSlugUniqueConstraintError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  if (!('code' in error) || error.code !== 'P2002') {
+    return false;
+  }
+
+  const meta = 'meta' in error ? error.meta : undefined;
+  const target =
+    meta && typeof meta === 'object' && 'target' in meta ? meta.target : undefined;
+  return Array.isArray(target) && target.includes('slug');
 }
 
 async function reservePreparedQuestionSlug(baseSlug: string): Promise<string> {
@@ -150,7 +178,7 @@ function toRecord(question: {
   createdAt: Date;
   updatedAt: Date;
   rounds: { gameId: string }[];
-}, currentGameId: string): PreparedQuestionRecord {
+}, currentGameId?: string): PreparedQuestionRecord {
   return {
     id: question.id,
     slug: question.slug,
@@ -166,7 +194,9 @@ function toRecord(question: {
         ? question.correctChoice
         : null,
     isActive: question.isActive,
-    usedInCurrentGame: question.rounds.some((round) => round.gameId === currentGameId),
+    usedInCurrentGame: currentGameId
+      ? question.rounds.some((round) => round.gameId === currentGameId)
+      : false,
     totalUseCount: question.rounds.length,
     createdAt: question.createdAt.toISOString(),
     updatedAt: question.updatedAt.toISOString(),
@@ -179,29 +209,44 @@ export async function createPreparedQuestion(
 ): Promise<PreparedQuestionRecord> {
   const prisma = getPrisma();
   const normalized = normalizePreparedQuestionPayload(payload);
-  const slug = await reservePreparedQuestionSlug(normalized.slug);
 
-  const created = await prisma.preparedQuestion.create({
-    data: {
-      slug,
-      kind: normalized.kind,
-      question: normalized.question,
-      optionA: normalized.optionA,
-      optionB: normalized.optionB,
-      imageUrl: normalized.imageUrl,
-      optionAImageUrl: normalized.optionAImageUrl,
-      optionBImageUrl: normalized.optionBImageUrl,
-      correctChoice: normalized.correctChoice,
-      isActive: normalized.isActive,
-    },
-    include: {
-      rounds: {
-        select: { gameId: true },
-      },
-    },
-  });
+  let candidateSlug = await reservePreparedQuestionSlug(normalized.slug);
 
-  return toRecord(created, currentGameId);
+  for (let attempt = 0; attempt < MAX_CREATE_RETRIES; attempt += 1) {
+    try {
+      const created = await prisma.preparedQuestion.create({
+        data: {
+          slug: candidateSlug,
+          kind: normalized.kind,
+          question: normalized.question,
+          optionA: normalized.optionA,
+          optionB: normalized.optionB,
+          imageUrl: normalized.imageUrl,
+          optionAImageUrl: normalized.optionAImageUrl,
+          optionBImageUrl: normalized.optionBImageUrl,
+          correctChoice: normalized.correctChoice,
+          isActive: normalized.isActive,
+        },
+        include: {
+          rounds: {
+            select: { gameId: true },
+          },
+        },
+      });
+
+      return toRecord(created, currentGameId);
+    } catch (error) {
+      if (!isSlugUniqueConstraintError(error) || attempt === MAX_CREATE_RETRIES - 1) {
+        throw error;
+      }
+
+      candidateSlug = await reservePreparedQuestionSlug(
+        getNextSlugRetryBase(normalized.slug, candidateSlug),
+      );
+    }
+  }
+
+  throw new Error('質問プールの登録に失敗しました');
 }
 
 export async function listPreparedQuestions(
@@ -283,7 +328,7 @@ export async function getRandomUnusedPreparedQuestion(
 
 export async function syncPreparedQuestions(
   payloads: PreparedQuestionPayload[],
-  currentGameId: string,
+  currentGameId?: string,
 ): Promise<SyncPreparedQuestionsResult> {
   const prisma = getPrisma();
   const questions: PreparedQuestionRecord[] = [];
