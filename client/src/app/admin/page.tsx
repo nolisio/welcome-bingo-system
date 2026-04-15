@@ -9,6 +9,7 @@ import {
   BingoWinner,
   CustomQuestionRequestInfo,
   CustomQuestionReview,
+  PreparedQuestionKind,
   PreparedQuestionRecord,
   PublicGameState,
 } from '@/types/game';
@@ -69,9 +70,9 @@ const QUESTION_SAMPLE_PRESETS = [
     question: '今食べたいのは？',
     optionA: '肉',
     optionB: '魚',
-    questionImageUrl: '/question-samples/nanitabeyou.jpeg',
-    optionAImageUrl: '/question-samples/meet.png',
-    optionBImageUrl: '/question-samples/fish.png',
+    questionImageUrl: '/question-assets/majority/food/nanitabeyou.jpeg',
+    optionAImageUrl: '/question-assets/majority/food/meet.png',
+    optionBImageUrl: '/question-assets/majority/food/fish.png',
   },
   {
     id: 'life',
@@ -82,6 +83,80 @@ const QUESTION_SAMPLE_PRESETS = [
     questionImageUrl: '',
     optionAImageUrl: '',
     optionBImageUrl: '',
+  },
+] as const;
+
+type PreparedQuestionInputState = {
+  kind: PreparedQuestionKind;
+  question: string;
+  optionA: string;
+  optionB: string;
+  imageUrl: string;
+  optionAImageUrl: string;
+  optionBImageUrl: string;
+  correctChoice: 'A' | 'B';
+};
+
+const DEFAULT_PREPARED_QUESTION_INPUT: PreparedQuestionInputState = {
+  kind: 'MAJORITY',
+  question: '',
+  optionA: '',
+  optionB: '',
+  imageUrl: '',
+  optionAImageUrl: '',
+  optionBImageUrl: '',
+  correctChoice: 'A',
+};
+
+const MAJORITY_SAMPLE_PRESETS = [
+  {
+    id: 'homework',
+    label: '夏休みの宿題',
+    question: '夏休みの宿題、どっち派？',
+    optionA: '最初に終わらせる',
+    optionB: '最後に追い込む',
+    questionImageUrl: '',
+    optionAImageUrl: '',
+    optionBImageUrl: '',
+  },
+  {
+    id: 'food',
+    label: '今食べたい',
+    question: '今食べたいのは？',
+    optionA: '肉',
+    optionB: '魚',
+    questionImageUrl: '/question-assets/majority/food/nanitabeyou.jpeg',
+    optionAImageUrl: '/question-assets/majority/food/meet.png',
+    optionBImageUrl: '/question-assets/majority/food/fish.png',
+  },
+  {
+    id: 'life',
+    label: '大事なのは',
+    question: '大事なのはどっち？',
+    optionA: '食事',
+    optionB: '睡眠',
+    questionImageUrl: '',
+    optionAImageUrl: '',
+    optionBImageUrl: '',
+  },
+] as const;
+
+const QUIZ_SAMPLE_PRESETS = [
+  {
+    id: 'it',
+    label: 'ITクイズ',
+    question: 'ITは何の略？',
+    optionA: 'Information Technology',
+    optionB: 'Internet Technology',
+    correctChoice: 'A' as const,
+  },
+  {
+    id: 'ai',
+    label: 'AIクイズ',
+    question: 'AIって何の略？',
+    optionA: 'Artificial Intelligence',
+    optionB: 'Automatic Intelligence',
+    correctChoice: 'A' as const,
   },
 ] as const;
 
@@ -107,14 +182,8 @@ export default function AdminPage() {
   const [winners, setWinners] = useState<BingoWinner[]>([]);
   const [customQuestions, setCustomQuestions] = useState<CustomQuestionReview[]>([]);
   const [preparedQuestions, setPreparedQuestions] = useState<PreparedQuestionRecord[]>([]);
-  const [preparedQuestionInput, setPreparedQuestionInput] = useState({
-    question: '',
-    optionA: '',
-    optionB: '',
-    imageUrl: '',
-    optionAImageUrl: '',
-    optionBImageUrl: '',
-  });
+  const [preparedQuestionInput, setPreparedQuestionInput] =
+    useState<PreparedQuestionInputState>(DEFAULT_PREPARED_QUESTION_INPUT);
 
   useEffect(() => {
     const socket = getSocket();
@@ -252,7 +321,10 @@ export default function AdminPage() {
     });
   };
 
-  const handleStartRound = () => {
+  // Manual round starts go through a single handler so quiz/bonus validation
+  // stays aligned with the current admin flow.
+
+  const handleManualRoundStart = () => {
     if (!question.trim() || !optionA.trim() || !optionB.trim()) {
       showFeedback('質問文と2つの選択肢を入力してください。');
       return;
@@ -342,16 +414,34 @@ export default function AdminPage() {
     showFeedback(`「${preset.label}」を出題フォームへ反映しました。`);
   };
 
-  const handleLoadPreparedQuestionSample = (
-    preset: (typeof QUESTION_SAMPLE_PRESETS)[number],
+  const handleLoadPreparedQuizSample = (
+    preset: (typeof QUIZ_SAMPLE_PRESETS)[number],
   ) => {
     setPreparedQuestionInput({
+      kind: 'QUIZ',
+      question: preset.question,
+      optionA: preset.optionA,
+      optionB: preset.optionB,
+      imageUrl: '',
+      optionAImageUrl: '',
+      optionBImageUrl: '',
+      correctChoice: preset.correctChoice,
+    });
+    showFeedback(`「${preset.label}」をプール入力欄へ反映しました。`);
+  };
+
+  const handleLoadPreparedQuestionSample = (
+    preset: (typeof MAJORITY_SAMPLE_PRESETS)[number],
+  ) => {
+    setPreparedQuestionInput({
+      kind: 'MAJORITY',
       question: preset.question,
       optionA: preset.optionA,
       optionB: preset.optionB,
       imageUrl: preset.questionImageUrl,
       optionAImageUrl: preset.optionAImageUrl,
       optionBImageUrl: preset.optionBImageUrl,
+      correctChoice: 'A',
     });
     showFeedback(`「${preset.label}」をプール入力欄へ反映しました。`);
   };
@@ -395,23 +485,21 @@ export default function AdminPage() {
     emitAdmin(
       'admin:prepared-question:create',
       {
+        kind: preparedQuestionInput.kind,
         question: preparedQuestionInput.question,
         optionA: preparedQuestionInput.optionA,
         optionB: preparedQuestionInput.optionB,
         imageUrl: preparedQuestionInput.imageUrl || null,
         optionAImageUrl: preparedQuestionInput.optionAImageUrl || null,
         optionBImageUrl: preparedQuestionInput.optionBImageUrl || null,
+        correctChoice:
+          preparedQuestionInput.kind === 'QUIZ'
+            ? preparedQuestionInput.correctChoice
+            : null,
       },
       (res) => {
         if (res?.ok) {
-          setPreparedQuestionInput({
-            question: '',
-            optionA: '',
-            optionB: '',
-            imageUrl: '',
-            optionAImageUrl: '',
-            optionBImageUrl: '',
-          });
+          setPreparedQuestionInput(DEFAULT_PREPARED_QUESTION_INPUT);
         }
       },
     );
@@ -433,6 +521,8 @@ export default function AdminPage() {
     setQuestionImageUrl(preparedQuestion.imageUrl ?? '');
     setOptionAImageUrl(preparedQuestion.optionAImageUrl ?? '');
     setOptionBImageUrl(preparedQuestion.optionBImageUrl ?? '');
+    setBonusRoundType(preparedQuestion.kind === 'QUIZ' ? 'QUIZ' : 'NONE');
+    setCorrectChoice(preparedQuestion.correctChoice ?? 'A');
     showFeedback('質問プールの内容を手入力フォームへ反映しました。');
   };
 
@@ -481,7 +571,16 @@ export default function AdminPage() {
   const approvedQuestions = customQuestions.filter((item) => item.status === 'APPROVED');
   const newEmployees = participants.filter((participant) => participant.isNewEmployee);
   const activePreparedQuestions = preparedQuestions.filter((item) => item.isActive);
+  const activeMajorityPreparedQuestions = activePreparedQuestions.filter(
+    (item) => item.kind === 'MAJORITY',
+  );
+  const activeQuizPreparedQuestions = activePreparedQuestions.filter(
+    (item) => item.kind === 'QUIZ',
+  );
   const availablePreparedQuestions = activePreparedQuestions.filter(
+    (item) => !item.usedInCurrentGame,
+  );
+  const availableRandomPreparedQuestions = activeMajorityPreparedQuestions.filter(
     (item) => !item.usedInCurrentGame,
   );
   const bonusRoundEnabled = bonusRoundType === 'MAJORITY';
@@ -499,7 +598,7 @@ export default function AdminPage() {
   const canStartRandomRound =
     canStartManualRound &&
     bonusRoundType !== 'QUIZ' &&
-    availablePreparedQuestions.length > 0;
+    availableRandomPreparedQuestions.length > 0;
   const nextAction = !hasActiveGame
     ? {
         label: '次にやること',
@@ -599,8 +698,8 @@ export default function AdminPage() {
             />
             <AdminMetricCard
               label="未使用問題"
-              value={`${availablePreparedQuestions.length}件`}
-              detail={`有効 ${activePreparedQuestions.length}件 / プール総数 ${preparedQuestions.length}件`}
+              value={`${availableRandomPreparedQuestions.length}件`}
+              detail={`多数派 ${activeMajorityPreparedQuestions.length}件 / クイズ ${activeQuizPreparedQuestions.length}件 / 総数 ${preparedQuestions.length}件`}
               tone="sky"
             />
           </section>
@@ -815,6 +914,12 @@ export default function AdminPage() {
               <span className="rounded-full bg-gray-800 px-3 py-1">
                 未使用 {availablePreparedQuestions.length}
               </span>
+              <span className="rounded-full bg-gray-800 px-3 py-1">
+                多数派 {activeMajorityPreparedQuestions.length}
+              </span>
+              <span className="rounded-full bg-gray-800 px-3 py-1">
+                クイズ {activeQuizPreparedQuestions.length}
+              </span>
             </div>
           </div>
 
@@ -823,7 +928,7 @@ export default function AdminPage() {
                 新規登録
               </p>
             <div className="flex flex-wrap gap-2">
-              {QUESTION_SAMPLE_PRESETS.map((preset) => (
+              {MAJORITY_SAMPLE_PRESETS.map((preset) => (
                 <button
                   key={preset.id}
                   type="button"
@@ -833,6 +938,55 @@ export default function AdminPage() {
                   {preset.label}
                 </button>
               ))}
+              {QUIZ_SAMPLE_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => handleLoadPreparedQuizSample(preset)}
+                  className="rounded-lg border border-sky-300/30 bg-sky-950/40 px-3 py-2 text-xs font-bold text-sky-100 hover:border-sky-300/60"
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            <div className="grid gap-3 md:grid-cols-[1.2fr_1fr]">
+              <div className="rounded-xl border border-white/10 bg-gray-900 p-3">
+                <p className="text-xs font-semibold tracking-[0.08em] text-gray-400">
+                  問題種別
+                </p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {(['MAJORITY', 'QUIZ'] as const).map((kind) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      onClick={() =>
+                        setPreparedQuestionInput((current) => ({
+                          ...current,
+                          kind,
+                          correctChoice: kind === 'QUIZ' ? current.correctChoice : 'A',
+                        }))
+                      }
+                      className={clsx(
+                        'rounded-xl border px-3 py-3 text-sm font-bold transition',
+                        preparedQuestionInput.kind === kind
+                          ? 'border-sky-300 bg-sky-300 text-gray-950'
+                          : 'border-white/10 bg-black/10 text-white hover:border-sky-300/40',
+                      )}
+                    >
+                      {kind === 'MAJORITY' ? '多数派質問' : 'クイズ問題'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-gray-900 p-3 text-xs leading-5 text-gray-300">
+                <p className="font-semibold tracking-[0.08em] text-gray-400">運用メモ</p>
+                <p className="mt-2">
+                  画像は <code>/question-assets/...</code> のように repo 内の公開パスで管理する想定です。
+                </p>
+                <p className="mt-2">
+                  クイズ問題を登録した場合は、管理画面で反映すると自動でボーナス問題として読み込まれます。
+                </p>
+              </div>
             </div>
             <input
               type="text"
@@ -872,6 +1026,37 @@ export default function AdminPage() {
                 className="w-full rounded-xl bg-gray-900 px-4 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+            {preparedQuestionInput.kind === 'QUIZ' && (
+              <div className="rounded-xl border border-sky-400/20 bg-sky-400/10 px-4 py-4 text-sm text-sky-100">
+                <p className="text-xs font-semibold tracking-[0.08em] text-sky-200">
+                  正解
+                </p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {(['A', 'B'] as const).map((choice) => (
+                    <button
+                      key={choice}
+                      type="button"
+                      onClick={() =>
+                        setPreparedQuestionInput((current) => ({
+                          ...current,
+                          correctChoice: choice,
+                        }))
+                      }
+                      className={clsx(
+                        'rounded-xl border px-4 py-3 text-sm font-bold transition',
+                        preparedQuestionInput.correctChoice === choice
+                          ? 'border-emerald-300 bg-emerald-300 text-gray-950'
+                          : 'border-white/10 bg-gray-900 text-white hover:border-emerald-300/40',
+                      )}
+                    >
+                      {choice === 'A'
+                        ? `A: ${preparedQuestionInput.optionA || '選択肢A'}`
+                        : `B: ${preparedQuestionInput.optionB || '選択肢B'}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <input
               type="text"
               value={preparedQuestionInput.imageUrl}
@@ -958,6 +1143,26 @@ export default function AdminPage() {
                       <p className="mt-2 text-xs text-gray-400">
                         A: {item.optionA} / B: {item.optionB}
                       </p>
+                      <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-gray-300">
+                        <span
+                          className={clsx(
+                            'rounded-full px-2 py-1 font-bold',
+                            item.kind === 'QUIZ'
+                              ? 'bg-sky-900/60 text-sky-200'
+                              : 'bg-fuchsia-900/60 text-fuchsia-200',
+                          )}
+                        >
+                          {item.kind === 'QUIZ' ? 'クイズ問題' : '多数派質問'}
+                        </span>
+                        {item.kind === 'QUIZ' && item.correctChoice && (
+                          <span className="rounded-full bg-emerald-900/60 px-2 py-1 font-bold text-emerald-200">
+                            正解 {item.correctChoice}
+                          </span>
+                        )}
+                        <span className="rounded-full bg-black/20 px-2 py-1 font-mono text-gray-400">
+                          {item.slug}
+                        </span>
+                      </div>
                       {item.imageUrl && (
                         <div className="mt-3 overflow-hidden rounded-xl border border-white/10">
                           <img
@@ -1182,7 +1387,7 @@ export default function AdminPage() {
             />
           </div>
             <button
-              onClick={handleStartRound}
+              onClick={handleManualRoundStart}
               disabled={!canStartManualRound}
               className="w-full rounded-xl bg-blue-600 py-2 font-bold text-white hover:bg-blue-700 disabled:bg-gray-700"
             >
@@ -1198,9 +1403,9 @@ export default function AdminPage() {
               質問作成依頼中はラウンドを開始できません。
             </p>
           )}
-          {!activeQuestionRequest && availablePreparedQuestions.length === 0 && (
+          {!activeQuestionRequest && availableRandomPreparedQuestions.length === 0 && (
             <p className="text-xs text-amber-300">
-              今のゲームで使える未使用プール問題がありません。
+              今のゲームで使える未使用の多数派質問プールがありません。
             </p>
           )}
           {!canStartManualRound && !activeQuestionRequest && !hasPendingBonusSelections && !hasActiveGame && (

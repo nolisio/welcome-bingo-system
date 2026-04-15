@@ -4,6 +4,7 @@ export type RoundStatus = 'VOTING' | 'CLOSED' | 'COMPLETED';
 export type CustomQuestionStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 export type RoundQuestionSource = 'MANUAL' | 'POOL';
 export type BonusRoundType = 'NONE' | 'MAJORITY' | 'QUIZ';
+export type PreparedQuestionKind = 'MAJORITY' | 'QUIZ';
 
 export interface BingoCardState {
   numbers: number[];
@@ -132,12 +133,15 @@ export interface AdminParticipantSummary {
 
 export interface PreparedQuestionRecord {
   id: string;
+  slug: string;
+  kind: PreparedQuestionKind;
   question: string;
   optionA: string;
   optionB: string;
   imageUrl: string | null;
   optionAImageUrl: string | null;
   optionBImageUrl: string | null;
+  correctChoice: VoteChoice | null;
   isActive: boolean;
   usedInCurrentGame: boolean;
   totalUseCount: number;
