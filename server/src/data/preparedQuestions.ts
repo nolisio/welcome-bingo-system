@@ -64,7 +64,7 @@ export const preparedQuestionSeeds: PreparedQuestionSeed[] = [
     optionA: '夏',
     optionB: '冬',
   },
-  { // 画像
+  {
     slug: 'majority-kinoko-or-takenoko',
     kind: 'MAJORITY',
     question: 'きのこ派？たけのこ派？',
@@ -86,6 +86,8 @@ export const preparedQuestionSeeds: PreparedQuestionSeed[] = [
     question: '朝食はどっち派？',
     optionA: 'パン',
     optionB: 'ご飯',
+    optionAImageUrl: '/question-assets/majority/asa/pan.jpg',
+    optionBImageUrl: '/question-assets/majority/asa/gohan.jpg',
   },
   {
     slug: 'majority-outdoor-or-indoor',
@@ -116,27 +118,6 @@ export const preparedQuestionSeeds: PreparedQuestionSeed[] = [
     optionB: 'ユニバ',
   },
   {
-    slug: 'majority-high-or-low-sensitivity',
-    kind: 'MAJORITY',
-    question: 'ゲームの感度はどっち派？',
-    optionA: 'ハイセンシ',
-    optionB: 'ローセンシ',
-  },
-  {
-    slug: 'majority-lever-or-leverless',
-    kind: 'MAJORITY',
-    question: '格ゲー操作はどっち派？',
-    optionA: 'レバー',
-    optionB: 'レバーレス',
-  },
-  {
-    slug: 'majority-pad-or-keyboard-mouse',
-    kind: 'MAJORITY',
-    question: 'ゲーム操作はどっち派？',
-    optionA: 'パッド',
-    optionB: 'キーマウ',
-  },
-  {
     slug: 'majority-tsubuan-or-koshian',
     kind: 'MAJORITY',
     question: 'あんこはどっち派？',
@@ -156,6 +137,8 @@ export const preparedQuestionSeeds: PreparedQuestionSeed[] = [
     question: '選ぶならどっち？',
     optionA: '赤いきつね',
     optionB: '緑のたぬき',
+    optionAImageUrl: '/question-assets/majority/capmen/aka.jpg',
+    optionBImageUrl: '/question-assets/majority/capmen/midori.jpg',
   },
   {
     slug: 'majority-squid-or-octopus',
@@ -181,7 +164,7 @@ export const preparedQuestionSeeds: PreparedQuestionSeed[] = [
   {
     slug: 'majority-sweet-or-spicy',
     kind: 'MAJORITY',
-    question: '好きなのはどっち？',
+    question: '好きなのはどちらかというと？',
     optionA: '甘いもの',
     optionB: '辛いもの',
   },
@@ -226,6 +209,13 @@ export const preparedQuestionSeeds: PreparedQuestionSeed[] = [
     question: 'キーボードのテンキーは？',
     optionA: 'あり',
     optionB: 'なし',
+  },
+  {
+  slug: 'majority-egg-soy-or-sauce',
+  kind: 'MAJORITY',
+  question: '目玉焼きにかけるなら？',
+  optionA: '醤油',
+  optionB: 'ソース',
   },
   {
     slug: 'quiz-star-system-mascot-name',
