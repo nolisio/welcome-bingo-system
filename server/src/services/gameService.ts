@@ -16,6 +16,9 @@ import {
   generateBingoCard,
   getInitialOpenedCells,
   hasUnopenedCell,
+  isCardWithinCurrentRange,
+  MAX_DRAW_NUMBER,
+  MIN_DRAW_NUMBER,
   normalizeLegacyCardNumbers,
   normalizeOpenedCells,
   openCell,
@@ -50,7 +53,10 @@ function addBingoWinner(participant: ParticipantState, round: RoundState): void 
 }
 
 function getRandomUnusedNumber(): number {
-  const allNumbers = Array.from({ length: 75 }, (_, index) => index + 1);
+  const allNumbers = Array.from(
+    { length: MAX_DRAW_NUMBER - MIN_DRAW_NUMBER + 1 },
+    (_, index) => MIN_DRAW_NUMBER + index,
+  );
   const unused = allNumbers.filter((value) => !_game.drawnNumbers.includes(value));
   if (unused.length === 0) {
     throw new Error('抽選できる番号がもうありません');
@@ -233,27 +239,48 @@ export async function registerParticipant(
 
   let card: ParticipantState['card'];
   if (existingCard) {
-    const hadLegacyFreeCenter = existingCard.numbers[12] === 0;
-    const normalizedNumbers = normalizeLegacyCardNumbers(existingCard.numbers);
-    const normalizedMask = normalizeOpenedCells(
-      existingCard.openedCells,
-      dbParticipant.isNewEmployee,
-      hadLegacyFreeCenter,
-    );
+    if (!isCardWithinCurrentRange(existingCard.numbers)) {
+      // Cards from older draw ranges are regenerated once so they stay playable.
+      const regeneratedNumbers = generateBingoCard();
+      const regeneratedOpenedCells = getInitialOpenedCells(
+        dbParticipant.isNewEmployee,
+      );
 
-    card = {
-      numbers: normalizedNumbers,
-      openedCells: normalizedMask,
-    };
+      card = {
+        numbers: regeneratedNumbers,
+        openedCells: regeneratedOpenedCells,
+      };
 
-    if (hadLegacyFreeCenter || normalizedMask !== existingCard.openedCells) {
       await prisma.bingoCard.update({
         where: { participantId: id },
         data: {
-          numbers: normalizedNumbers,
-          openedCells: normalizedMask,
+          numbers: regeneratedNumbers,
+          openedCells: regeneratedOpenedCells,
         },
       });
+    } else {
+      const hadLegacyFreeCenter = existingCard.numbers[12] === 0;
+      const normalizedNumbers = normalizeLegacyCardNumbers(existingCard.numbers);
+      const normalizedMask = normalizeOpenedCells(
+        existingCard.openedCells,
+        dbParticipant.isNewEmployee,
+        hadLegacyFreeCenter,
+      );
+
+      card = {
+        numbers: normalizedNumbers,
+        openedCells: normalizedMask,
+      };
+
+      if (hadLegacyFreeCenter || normalizedMask !== existingCard.openedCells) {
+        await prisma.bingoCard.update({
+          where: { participantId: id },
+          data: {
+            numbers: normalizedNumbers,
+            openedCells: normalizedMask,
+          },
+        });
+      }
     }
   } else {
     card = {

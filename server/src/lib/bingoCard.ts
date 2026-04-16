@@ -2,22 +2,25 @@
  * Bingo card generation utilities.
  *
  * Standard 5x5 bingo card layout:
- *   B: 1-15   (column 0)
- *   I: 16-30  (column 1)
- *   N: 31-45  (column 2)
- *   G: 46-60  (column 3)
- *   O: 61-75  (column 4)
+ *   B: 1-8    (column 0)
+ *   I: 9-16   (column 1)
+ *   N: 17-24  (column 2)
+ *   G: 25-32  (column 3)
+ *   O: 33-40  (column 4)
  *
  * In the updated rule set, the center cell is a normal numbered cell.
  * New employees only receive the center cell as an initial opened bonus.
  */
 
+export const MIN_DRAW_NUMBER = 1;
+export const MAX_DRAW_NUMBER = 40;
+
 const COLUMN_RANGES: [number, number][] = [
-  [1, 15],
-  [16, 30],
-  [31, 45],
-  [46, 60],
-  [61, 75],
+  [1, 8],
+  [9, 16],
+  [17, 24],
+  [25, 32],
+  [33, 40],
 ];
 
 export const CENTER_CELL_INDEX = 12;
@@ -68,6 +71,17 @@ export function closeCenterCell(openedCells: number): number {
   return openedCells & ~CENTER_CELL_BIT;
 }
 
+/** Ensure all persisted card numbers fit the currently configured draw range. */
+export function isCardWithinCurrentRange(numbers: number[]): boolean {
+  if (numbers.length !== 25) return false;
+  return numbers.every(
+    (value) =>
+      Number.isInteger(value) &&
+      value >= MIN_DRAW_NUMBER &&
+      value <= MAX_DRAW_NUMBER,
+  );
+}
+
 /**
  * Legacy cards used 0 in the center as a free cell. Replace that placeholder
  * with an unused N-column number so old cards remain playable under the new rule.
@@ -76,6 +90,7 @@ export function normalizeLegacyCardNumbers(numbers: number[]): number[] {
   if (numbers[CENTER_CELL_INDEX] !== 0) return numbers;
 
   const nextNumbers = [...numbers];
+  const [min, max] = COLUMN_RANGES[2];
   const usedInCenterColumn = new Set([
     nextNumbers[2],
     nextNumbers[7],
@@ -83,7 +98,7 @@ export function normalizeLegacyCardNumbers(numbers: number[]): number[] {
     nextNumbers[22],
   ]);
   const available = [];
-  for (let value = 31; value <= 45; value++) {
+  for (let value = min; value <= max; value++) {
     if (!usedInCenterColumn.has(value)) {
       available.push(value);
     }

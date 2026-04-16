@@ -70,8 +70,8 @@ export const preparedQuestionSeeds: PreparedQuestionSeed[] = [
     question: 'きのこ派？たけのこ派？',
     optionA: 'きのこ派',
     optionB: 'たけのこ派',
-    optionAImageUrl: '\question-assets\majority\okasi\kinoko.jpg',
-    optionBImageUrl: '\question-assets\majority\okasi\takenoko.jpg',
+    optionAImageUrl: '/question-assets/majority/okasi/kinoko.jpg',
+    optionBImageUrl: '/question-assets/majority/okasi/takenoko.jpg',
   },
   {
     slug: 'majority-tea-or-coffee',
@@ -234,7 +234,7 @@ export const preparedQuestionSeeds: PreparedQuestionSeed[] = [
     optionA: '柴犬 すたこ',
     optionB: '黒柴 ゆうこ',
     correctChoice: 'B',
-    imageUrl: '\question-assets\quiz\よろこびゆうこ.png',
+    imageUrl: '/question-assets/quiz/よろこびゆうこ.png',
   },
   {
     slug: 'quiz-it-abbreviation',

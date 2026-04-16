@@ -675,7 +675,7 @@ export default function ParticipantPage() {
       ? '質問待ち'
       : !round
         ? '待機中'
-        : `第${round.roundNumber}`;
+        : `第${round.roundNumber}ラウンド`;
   const progressDetail =
     activeCustomQuestionRequest && !isRequestedAuthor
       ? `${activeCustomQuestionRequest.participantName}さんが入力中です`

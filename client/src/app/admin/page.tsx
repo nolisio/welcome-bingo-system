@@ -688,7 +688,7 @@ export default function AdminPage() {
             />
             <AdminMetricCard
               label="ラウンド"
-              value={currentRound ? `第${currentRound.roundNumber}` : '-'}
+              value={currentRound ? `第${currentRound.roundNumber}ラウンド` : '-'}
               detail={
                 currentRound
                   ? `${ROUND_STATUS_LABELS[currentRound.status] ?? currentRound.status} / 投票 ${currentRound.voteCount}票`
