@@ -102,6 +102,7 @@ export interface ParticipantState {
   card: BingoCardState;
   currentVote: VoteChoice | null;
   canChooseBonusCell: boolean;
+  drawnNumbers: number[];
   currentRound: ParticipantRound | null;
   customQuestionRequest: CustomQuestionRequestInfo | null;
 }

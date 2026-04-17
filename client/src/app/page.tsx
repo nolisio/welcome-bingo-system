@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { getSocket } from '@/lib/socket';
 import {
-  BingoWinner,
   ParticipantRound,
   ParticipantState,
   VoteChoice,
@@ -65,103 +64,6 @@ function getSelectableBonusIndexes(openedCells: number) {
   );
 }
 
-function getBannerCopy(
-  round: ParticipantRound | null,
-  currentVote: VoteChoice | null,
-  myCardHasDrawn: boolean,
-  iOpenedACell: boolean,
-) {
-  if (!round) {
-    return {
-      eyebrow: '待機中',
-      title: '次のラウンドを待っています',
-      subtitle: '管理者がラウンドを開始すると、ここに質問とゲームの進行が表示されます。',
-      tone: 'border-white/10 bg-white/5 text-slate-100',
-    };
-  }
-
-  if (round.status === 'VOTING') {
-    return {
-      eyebrow: '投票受付中',
-      title: currentVote ? '投票を受け付けました' : 'どちらかを選んでください',
-      subtitle: currentVote
-        ? '結果発表までこのままお待ちください。'
-        : round.question,
-      tone: 'border-[#690dab]/30 bg-[#690dab]/10 text-[#d8b4fe]',
-    };
-  }
-
-  if (round.status === 'COMPLETED') {
-    return {
-      eyebrow: 'ラウンド結果',
-      title:
-        round.drawnNumber != null
-          ? `${round.drawnNumber} 番が確定しました`
-          : 'ラウンド結果が確定しました',
-      subtitle: iOpenedACell
-        ? 'あなたのカードのマスが1つ開きました。'
-        : myCardHasDrawn
-          ? 'カードに数字はありましたが、今回はマスは開きませんでした。'
-          : '今回の数字はあなたのカードにはありませんでした。',
-      tone: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200',
-    };
-  }
-
-  return {
-    eyebrow: '確認中',
-    title: '結果を集計しています',
-    subtitle: 'もう少しすると多数派と開いたマスが反映されます。',
-    tone: 'border-amber-400/25 bg-amber-400/10 text-amber-100',
-  };
-}
-
-function buildBannerCopy(
-  round: ParticipantRound | null,
-  currentVote: VoteChoice | null,
-  myCardHasDrawn: boolean,
-  iOpenedACell: boolean,
-  canChooseBonusCell: boolean,
-) {
-  if (!round) {
-    return {
-      eyebrow: '待機中',
-      title: '次のラウンドを待っています',
-      subtitle: '管理者がラウンドを開始すると、ここに質問とゲームの進行が表示されます。',
-      tone: 'border-white/10 bg-white/5 text-slate-100',
-    };
-  }
-
-  if (round.status === 'VOTING') {
-    return {
-      eyebrow: '投票受付中',
-      title: currentVote ? '投票を受け付けました' : 'どちらかを選んでください',
-      subtitle: currentVote
-        ? '結果発表までこのままお待ちください。'
-        : round.question,
-      tone: 'border-[#690dab]/30 bg-[#690dab]/10 text-[#d8b4fe]',
-    };
-  }
-
-  if (round.status === 'COMPLETED' && round.isBonusRound) {
-    return {
-      eyebrow: 'ボーナスタイム',
-      title: canChooseBonusCell ? '好きなマスを1つ選べます' : '★ の結果が確定しました',
-      subtitle: canChooseBonusCell
-        ? '多数派を選べたので、開けたいマスを1つタップしてください。'
-        : round.myBonusSelectionCellIndex != null
-          ? 'あなたは好きなマスを1つ開けました。'
-          : round.pendingBonusSelectorCount > 0
-            ? '対象者が追加でマスを選んでいます。少しお待ちください。'
-            : iOpenedACell
-              ? 'ボーナスタイムであなたのマスが1つ開きました。'
-              : '今回はあなたの追加開放はありませんでした。',
-      tone: 'border-amber-400/25 bg-amber-400/10 text-amber-100',
-    };
-  }
-
-  return getBannerCopy(round, currentVote, myCardHasDrawn, iOpenedACell);
-}
-
 function getRoundOutcome(round: ParticipantRound | null) {
   if (!round) {
     return {
@@ -185,65 +87,78 @@ function getRoundOutcome(round: ParticipantRound | null) {
   };
 }
 
-function buildResolvedBannerCopy(
+function getRoundTypeLabel(round: ParticipantRound | null): string | null {
+  if (!round) return null;
+  if (round.status === 'VOTING') return '多数決';
+  if (round.bonusRoundType === 'QUIZ') return 'クイズ';
+  if (round.isBonusRound) return 'ボーナス多数決';
+  return '多数決';
+}
+
+function getStatusMessage(
   round: ParticipantRound | null,
   currentVote: VoteChoice | null,
   myCardHasDrawn: boolean,
   iOpenedACell: boolean,
   canChooseBonusCell: boolean,
-) {
-  if (!(round?.status === 'COMPLETED' && round.isBonusRound)) {
-    return buildBannerCopy(
-      round,
-      currentVote,
-      myCardHasDrawn,
-      iOpenedACell,
-      canChooseBonusCell,
-    );
+  customQuestionRequest: ParticipantState['customQuestionRequest'],
+  isRequestedAuthor: boolean,
+): { text: string; tone: 'idle' | 'vote' | 'result' | 'bonus' | 'wait' } {
+  if (customQuestionRequest && !isRequestedAuthor) {
+    return { text: `${customQuestionRequest.participantName}さんが質問を作成中...`, tone: 'wait' };
   }
 
-  const outcome = getRoundOutcome(round);
+  if (!round) {
+    return { text: '次のラウンドを待っています...', tone: 'idle' };
+  }
 
-  return {
-    eyebrow: outcome.isQuizBonus ? 'ボーナス問題' : 'ボーナスタイム',
-    title: canChooseBonusCell
-      ? '好きなマスを1つ選んでください'
-      : outcome.isQuizBonus
-        ? '★ の正解を発表しました'
-        : '★ の結果を発表しました',
-    subtitle: canChooseBonusCell
-      ? outcome.isQuizBonus
-        ? '正解したので、好きなマスを1つだけ開けられます。'
-        : '多数派だったので、好きなマスを1つだけ開けられます。'
-      : round.myBonusSelectionCellIndex != null
-        ? 'あなたのボーナスマス選択は完了しました。'
-        : round.pendingBonusSelectorCount > 0
-          ? outcome.isQuizBonus
-            ? '正解した参加者がマスを選択中です。しばらくお待ちください。'
-            : '多数派だった参加者がマスを選択中です。しばらくお待ちください。'
-          : iOpenedACell
-            ? 'ボーナスであなたのカードが1マス開きました。'
-            : `${outcome.descriptor}に入れなかったため、今回はボーナスマスの対象外です。`,
-    tone: 'border-amber-400/25 bg-amber-400/10 text-amber-100',
-  };
+  if (round.status === 'VOTING') {
+    return currentVote
+      ? { text: '投票済み - 結果発表をお待ちください', tone: 'vote' }
+      : { text: '質問に回答してください！', tone: 'vote' };
+  }
+
+  if (round.status === 'COMPLETED') {
+    if (round.isBonusRound) {
+      if (canChooseBonusCell) {
+        return { text: 'ボーナス！好きなマスを1つ選べます', tone: 'bonus' };
+      }
+      if (round.pendingBonusSelectorCount > 0) {
+        return { text: 'ボーナス選択中...しばらくお待ちください', tone: 'wait' };
+      }
+      if (iOpenedACell) {
+        return { text: 'ボーナスでマスが開きました！', tone: 'result' };
+      }
+      return { text: 'ボーナス対象外でした', tone: 'result' };
+    }
+
+    if (iOpenedACell) {
+      return { text: 'マスが開きました！', tone: 'result' };
+    }
+    if (myCardHasDrawn) {
+      return { text: 'カードに数字がありましたが、開きませんでした', tone: 'result' };
+    }
+    return { text: '今回はハズレでした', tone: 'result' };
+  }
+
+  return { text: '結果を集計中...', tone: 'wait' };
 }
 
-function Shell({
-  title,
-  subtitle,
-  right,
-  children,
-  footer,
-}: {
-  title: string;
-  subtitle: string;
-  right?: ReactNode;
-  children: ReactNode;
-  footer?: ReactNode;
-}) {
+/* ── Ambient background orbs ── */
+function AmbientOrbs() {
+  return (
+    <div className="pointer-events-none fixed inset-0 overflow-hidden">
+      <div className="animate-float absolute -left-32 -top-32 h-80 w-80 rounded-full bg-purple-600/[0.07] blur-[100px]" />
+      <div className="animate-float-slow absolute -right-24 top-1/3 h-64 w-64 rounded-full bg-violet-500/[0.06] blur-[80px]" />
+      <div className="animate-float absolute -bottom-20 left-1/4 h-72 w-72 rounded-full bg-indigo-600/[0.05] blur-[90px]" />
+    </div>
+  );
+}
+
+function Shell({ children }: { children: ReactNode }) {
   return (
     <div
-      className="min-h-[100dvh] bg-[#12091c] text-slate-100"
+      className="relative min-h-[100dvh] bg-[#0a0612] text-slate-100"
       style={{
         paddingTop: 'env(safe-area-inset-top)',
         paddingRight: 'env(safe-area-inset-right)',
@@ -251,74 +166,151 @@ function Shell({
         paddingLeft: 'env(safe-area-inset-left)',
       }}
     >
-      <div className="relative mx-auto flex min-h-[100dvh] max-w-md flex-col overflow-hidden border-x border-[#690dab]/10 bg-[#1a1022] shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
-        <header className="flex items-center justify-between border-b border-white/10 bg-[#1a1022]/95 px-4 py-4 backdrop-blur">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold tracking-[0.08em] text-[#c084fc]">
-              新歓ビンゴ
-            </p>
-            <h1 className="truncate text-lg font-bold text-white">
-              {title}
-            </h1>
-            <p className="mt-1 text-xs text-slate-400">{subtitle}</p>
-          </div>
-          {right && <div className="ml-4 shrink-0">{right}</div>}
-        </header>
-
+      <AmbientOrbs />
+      <div className="relative mx-auto flex min-h-[100dvh] max-w-md flex-col overflow-hidden">
         {children}
-
-        {footer && (
-          <footer className="border-t border-white/10 bg-[#140a1c]/95 px-4 pb-6 pt-4 backdrop-blur">
-            {footer}
-          </footer>
-        )}
       </div>
     </div>
   );
 }
 
-function StatusChip({
-  connected,
-}: {
-  connected: boolean;
-}) {
+function StatusDot({ connected }: { connected: boolean }) {
   return (
-    <div
+    <span
       className={clsx(
-        'rounded-full border px-3 py-1 text-xs font-semibold tracking-[0.08em]',
-        connected
-          ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
-          : 'border-white/10 bg-white/5 text-slate-400',
+        'inline-flex items-center gap-1.5 text-[11px] font-medium',
+        connected ? 'text-emerald-400' : 'text-slate-500',
       )}
     >
-      {connected ? '接続中' : '再接続中'}
-    </div>
+      <span
+        className={clsx(
+          'h-1.5 w-1.5 rounded-full',
+          connected
+            ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]'
+            : 'bg-slate-600 animate-pulse',
+        )}
+      />
+      {connected ? 'LIVE' : '接続中...'}
+    </span>
   );
 }
 
-function StatTile({
-  label,
-  value,
-  detail,
-  tone = 'default',
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  tone?: 'default' | 'violet' | 'emerald' | 'amber';
-}) {
-  const toneClass = {
-    default: 'border-white/10 bg-white/5 text-slate-100',
-    violet: 'border-[#690dab]/25 bg-[#690dab]/12 text-white',
-    emerald: 'border-emerald-500/20 bg-emerald-500/10 text-white',
-    amber: 'border-amber-400/25 bg-amber-400/10 text-white',
-  }[tone];
+/* ── Progress ring (mini donut) for bingo progress ── */
+function ProgressRing({ opened, total }: { opened: number; total: number }) {
+  const pct = (opened / total) * 100;
+  const r = 14;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - (pct / 100) * circ;
 
   return (
-    <div className={clsx('rounded-2xl border px-3 py-3 shadow-[0_10px_30px_rgba(0,0,0,0.16)]', toneClass)}>
-      <p className="text-[10px] font-semibold tracking-[0.08em] text-slate-300">{label}</p>
-      <p className="mt-1 text-xl font-semibold">{value}</p>
-      <p className="mt-1 text-[11px] leading-4 text-slate-300">{detail}</p>
+    <svg width="36" height="36" className="shrink-0 -rotate-90">
+      <circle
+        cx="18" cy="18" r={r}
+        fill="none" stroke="rgba(139,92,246,0.15)" strokeWidth="3"
+      />
+      <circle
+        cx="18" cy="18" r={r}
+        fill="none" stroke="url(#ring-grad)" strokeWidth="3"
+        strokeLinecap="round"
+        strokeDasharray={circ}
+        strokeDashoffset={offset}
+        className="transition-all duration-700 ease-out"
+      />
+      <defs>
+        <linearGradient id="ring-grad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#a855f7" />
+          <stop offset="100%" stopColor="#6366f1" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
+
+/* ── History Drawer ── */
+function HistoryDrawer({
+  drawnNumbers,
+  cardNumbers,
+  openedCells,
+  onClose,
+}: {
+  drawnNumbers: number[];
+  cardNumbers: number[];
+  openedCells: number;
+  onClose: () => void;
+}) {
+  const cardSet = new Set(cardNumbers);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-sm"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="animate-slide-up mx-auto w-full max-w-md rounded-t-3xl border-t border-purple-500/15 bg-gradient-to-b from-[#150b24] to-[#0d0618] px-5 pb-10 pt-5 shadow-[0_-16px_64px_rgba(0,0,0,0.5)]">
+        {/* Handle bar */}
+        <div className="mb-4 flex justify-center">
+          <div className="h-1 w-10 rounded-full bg-white/10" />
+        </div>
+
+        <div className="mb-5 flex items-center justify-between">
+          <h3 className="text-base font-bold text-white">出た番号</h3>
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-slate-400 ring-1 ring-white/10 transition hover:bg-white/10"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {drawnNumbers.length === 0 ? (
+          <p className="py-8 text-center text-sm text-slate-500">
+            まだ番号が出ていません
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {drawnNumbers.map((num, i) => {
+              const onMyCard = cardSet.has(num);
+              const cellIdx = cardNumbers.indexOf(num);
+              const isOpened = cellIdx >= 0 && isCellOpen(openedCells, cellIdx);
+
+              return (
+                <div
+                  key={`${num}-${i}`}
+                  className={clsx(
+                    'flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold transition-all',
+                    isOpened
+                      ? 'bg-gradient-to-br from-purple-600 to-violet-700 text-white shadow-[0_0_12px_rgba(139,92,246,0.3)]'
+                      : onMyCard
+                        ? 'bg-purple-500/15 text-purple-300 ring-1 ring-purple-400/25'
+                        : 'bg-white/[0.03] text-slate-600 ring-1 ring-white/[0.06]',
+                  )}
+                >
+                  {num}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Legend */}
+        <div className="mt-5 flex items-center gap-5 text-[11px] text-slate-500">
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded bg-gradient-to-br from-purple-600 to-violet-700" />
+            開いた
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded bg-purple-500/15 ring-1 ring-purple-400/25" />
+            カードにある
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded bg-white/[0.03] ring-1 ring-white/[0.06]" />
+            なし
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -339,6 +331,7 @@ export default function ParticipantPage() {
   const [bonusSelection, setBonusSelection] = useState<number | null>(null);
   const [bonusFeedback, setBonusFeedback] = useState('');
   const [bonusLoading, setBonusLoading] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const bingoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -384,6 +377,7 @@ export default function ParticipantPage() {
       setBonusFeedback('');
       setBonusLoading(false);
       setBingoAnnouncement(null);
+      setShowHistory(false);
       localStorage.removeItem(NAME_KEY);
     };
 
@@ -425,13 +419,13 @@ export default function ParticipantPage() {
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const previousOverflow = document.body.style.overflow;
-    if (showVoteOverlay || showCustomQuestionOverlay || showBonusOverlay) {
+    if (showVoteOverlay || showCustomQuestionOverlay || showBonusOverlay || showHistory) {
       document.body.style.overflow = 'hidden';
     }
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [showVoteOverlay, showCustomQuestionOverlay, showBonusOverlay]);
+  }, [showVoteOverlay, showCustomQuestionOverlay, showBonusOverlay, showHistory]);
 
   useEffect(() => {
     if (!showBonusOverlay) {
@@ -500,9 +494,9 @@ export default function ParticipantPage() {
           setCustomQuestion('');
           setCustomOptionA('');
           setCustomOptionB('');
-          setCustomQuestionFeedback('質問案を送信しました。管理者の確認をお待ちください。');
+          setCustomQuestionFeedback('送信しました！管理者の確認をお待ちください。');
         } else {
-          setCustomQuestionFeedback(res?.error || '質問案の送信に失敗しました。');
+          setCustomQuestionFeedback(res?.error || '送信に失敗しました。');
         }
       },
     );
@@ -510,7 +504,7 @@ export default function ParticipantPage() {
 
   const handleSubmitBonusCell = () => {
     if (bonusSelection == null) {
-      setBonusFeedback('開けたいマスを1つ選んでください。');
+      setBonusFeedback('マスを1つ選んでください。');
       return;
     }
 
@@ -522,31 +516,35 @@ export default function ParticipantPage() {
         setBonusFeedback('');
         setBonusSelection(null);
       } else {
-        setBonusFeedback(res?.error || 'ボーナスマスの選択に失敗しました。');
+        setBonusFeedback(res?.error || '選択に失敗しました。');
       }
     });
   };
 
+  // ━━━━━━━━━━ Join Screen ━━━━━━━━━━
   if (!joined) {
     return (
-      <Shell
-        title="ビンゴに参加する"
-        subtitle={connected ? '表示名を入力して参加してください。' : 'サーバーへ接続しています...'}
-        right={<StatusChip connected={connected} />}
-      >
+      <Shell>
         <main className="flex flex-1 flex-col justify-center px-6 py-8">
-          <div className="rounded-[1.75rem] border border-[#690dab]/20 bg-white/5 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
-            <div className="mb-6 inline-flex rounded-full border border-[#690dab]/30 bg-[#690dab]/10 px-3 py-1 text-xs font-semibold tracking-[0.08em] text-[#d8b4fe]">
-              参加
+          {/* Logo / title area */}
+          <div className="mb-10 text-center">
+            <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-600 to-violet-700 shadow-[0_8px_32px_rgba(139,92,246,0.4)]">
+              <span className="text-3xl font-black text-white">B</span>
             </div>
-            <h2 className="text-3xl font-bold text-white">
-              参加情報を入力
-            </h2>
-            <p className="mt-3 text-sm leading-6 text-slate-300">
-              参加後はこの画面でビンゴカードの確認、質問への投票、結果の確認を行います。
+            <h1 className="bg-gradient-to-r from-white via-purple-100 to-white bg-clip-text text-3xl font-black tracking-tight text-transparent">
+              新歓ビンゴ
+            </h1>
+            <p className="mt-2 text-sm text-slate-400">
+              2択に答えてビンゴを目指そう
             </p>
+            <div className="mt-3">
+              <StatusDot connected={connected} />
+            </div>
+          </div>
 
-            <label className="mt-8 block text-xs font-semibold tracking-[0.08em] text-slate-400">
+          {/* Form card */}
+          <div className="rounded-2xl border border-purple-500/10 bg-gradient-to-b from-white/[0.04] to-white/[0.01] p-5 shadow-[0_8px_40px_rgba(0,0,0,0.3)] backdrop-blur">
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">
               表示名
             </label>
             <input
@@ -555,47 +553,43 @@ export default function ParticipantPage() {
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
               placeholder="名前を入力"
-              className="mt-3 w-full rounded-2xl border border-white/10 bg-[#241630] px-4 py-4 text-base text-white outline-none transition placeholder:text-slate-500 focus:border-[#690dab] focus:ring-2 focus:ring-[#690dab]/30"
+              className="mt-2 w-full rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-base text-white outline-none transition placeholder:text-slate-600 focus:border-purple-500/40 focus:bg-white/[0.05] focus:ring-2 focus:ring-purple-500/20"
               maxLength={40}
             />
 
-            <div className="mt-6">
-              <p className="text-xs font-semibold tracking-[0.08em] text-slate-400">
+            <div className="mt-5">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                 新入社員ですか？
               </p>
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsNewEmployee(true)}
-                  className={clsx(
-                    'rounded-2xl border px-4 py-4 text-sm font-bold transition',
-                    isNewEmployee
-                      ? 'border-[#690dab] bg-[#690dab] text-white shadow-[0_10px_24px_rgba(105,13,171,0.32)]'
-                      : 'border-white/10 bg-[#241630] text-slate-200',
-                  )}
-                >
-                  はい
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsNewEmployee(false)}
-                  className={clsx(
-                    'rounded-2xl border px-4 py-4 text-sm font-bold transition',
-                    !isNewEmployee
-                      ? 'border-[#690dab] bg-[#690dab] text-white shadow-[0_10px_24px_rgba(105,13,171,0.32)]'
-                      : 'border-white/10 bg-[#241630] text-slate-200',
-                  )}
-                >
-                  いいえ
-                </button>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {[
+                  { val: true, label: 'はい' },
+                  { val: false, label: 'いいえ' },
+                ].map(({ val, label }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setIsNewEmployee(val)}
+                    className={clsx(
+                      'rounded-xl border px-4 py-2.5 text-sm font-bold transition-all duration-200',
+                      isNewEmployee === val
+                        ? 'border-purple-500/40 bg-gradient-to-r from-purple-600 to-violet-600 text-white shadow-[0_4px_16px_rgba(139,92,246,0.3)]'
+                        : 'border-white/[0.06] bg-white/[0.03] text-slate-400 hover:bg-white/[0.06]',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
-              <p className="mt-3 text-xs leading-5 text-slate-400">
-                新入社員として参加すると、中央マスが最初から開いた状態で始まります。
-              </p>
+              {isNewEmployee && (
+                <p className="mt-2 text-xs text-purple-400/60">
+                  中央マスが最初から開きます
+                </p>
+              )}
             </div>
 
             {error && (
-              <p className="mt-4 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+              <p className="mt-3 rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
                 {error}
               </p>
             )}
@@ -603,36 +597,52 @@ export default function ParticipantPage() {
             <button
               onClick={handleJoin}
               disabled={!connected}
-              className="mt-6 flex w-full items-center justify-center rounded-2xl border-b-4 border-black/20 bg-[#690dab] px-4 py-4 text-base font-semibold tracking-[0.08em] text-white shadow-[0_14px_30px_rgba(105,13,171,0.4)] transition hover:bg-[#7a18c1] disabled:cursor-not-allowed disabled:border-transparent disabled:bg-slate-700 disabled:text-slate-400 disabled:shadow-none"
+              className={clsx(
+                'mt-5 w-full rounded-xl px-4 py-3.5 text-base font-bold text-white transition-all duration-300',
+                connected
+                  ? 'bg-gradient-to-r from-purple-600 to-violet-600 shadow-[0_8px_24px_rgba(139,92,246,0.35)] hover:shadow-[0_12px_32px_rgba(139,92,246,0.45)] active:scale-[0.98]'
+                  : 'cursor-not-allowed bg-slate-800 text-slate-500',
+              )}
             >
-              {connected ? 'ゲームに参加' : '接続中...'}
+              {connected ? '参加する' : '接続中...'}
             </button>
           </div>
-        </main>
-      </Shell>
-    );
-  }
 
-  if (!state) {
-    return (
-      <Shell
-        title="ビンゴ"
-        subtitle="参加情報を読み込んでいます。"
-        right={<StatusChip connected={connected} />}
-      >
-        <main className="flex flex-1 items-center justify-center px-6 py-8">
-          <div className="w-full rounded-[1.75rem] border border-white/10 bg-white/5 p-8 text-center shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
-            <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-[#690dab]/25 border-t-[#690dab]" />
-            <p className="mt-5 text-lg font-bold text-white">カードを読み込んでいます...</p>
-            <p className="mt-2 text-sm text-slate-400">
-              参加情報の復元が終わるまで、このままお待ちください。
-            </p>
+          {/* Rule hint */}
+          <div className="mt-8 flex items-center justify-center gap-6 text-[11px] text-slate-600">
+            <span className="flex items-center gap-1.5">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-500/10 text-[10px] text-purple-400">1</span>
+              2択に回答
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-500/10 text-[10px] text-purple-400">2</span>
+              多数派ならマスが開く
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-500/10 text-[10px] text-purple-400">3</span>
+              5つ揃えばBINGO
+            </span>
           </div>
         </main>
       </Shell>
     );
   }
 
+  // ━━━━━━━━━━ Loading ━━━━━━━━━━
+  if (!state) {
+    return (
+      <Shell>
+        <main className="flex flex-1 items-center justify-center px-6 py-8">
+          <div className="text-center animate-slide-up">
+            <div className="mx-auto h-12 w-12 animate-spin rounded-full border-[3px] border-purple-500/20 border-t-purple-500" />
+            <p className="mt-5 text-sm text-slate-500">カードを準備中...</p>
+          </div>
+        </main>
+      </Shell>
+    );
+  }
+
+  // ━━━━━━━━━━ Game Screen ━━━━━━━━━━
   const round = state.currentRound;
   const myCardHasDrawn =
     round?.drawnNumber != null &&
@@ -644,381 +654,409 @@ export default function ParticipantPage() {
   const bonusSelectableIndexes = showBonusOverlay
     ? getSelectableBonusIndexes(state.card.openedCells)
     : [];
-  const baseBanner = buildResolvedBannerCopy(
+  const roundOutcome = getRoundOutcome(round);
+  const roundTypeLabel = getRoundTypeLabel(round);
+  const status = getStatusMessage(
     round,
     state.currentVote,
     myCardHasDrawn,
     iOpenedACell,
     !!state.canChooseBonusCell,
+    activeCustomQuestionRequest,
+    isRequestedAuthor,
   );
-  const banner =
-    activeCustomQuestionRequest && !isRequestedAuthor
-      ? {
-          eyebrow: '質問作成中',
-          title: `${activeCustomQuestionRequest.participantName}さんが質問を作成しています`,
-          subtitle: '誤操作防止のため、他の参加者には入力欄を表示していません。少しお待ちください。',
-          tone: 'border-amber-400/25 bg-amber-400/10 text-amber-100',
-        }
-      : baseBanner;
-  const roundOutcome = getRoundOutcome(round);
-  const resultLabel = roundOutcome.label;
-  const drawnDisplayLabel =
-    round?.drawnNumber != null
-      ? round.isBonusRound
-        ? '★'
-        : String(round.drawnNumber)
-      : showVoteOverlay
-        ? '...'
-        : '-';
-  const progressValue =
-    activeCustomQuestionRequest && !isRequestedAuthor
-      ? '質問待ち'
-      : !round
-        ? '待機中'
-        : `第${round.roundNumber}ラウンド`;
-  const progressDetail =
-    activeCustomQuestionRequest && !isRequestedAuthor
-      ? `${activeCustomQuestionRequest.participantName}さんが入力中です`
-      : !round
-        ? '次のラウンド開始を待っています'
-        : round.status === 'VOTING'
-          ? '回答受付中です'
-          : round.status === 'COMPLETED'
-            ? '結果を反映しました'
-            : '結果を集計しています';
-  const numberDetail =
-    round?.drawnNumber != null
-      ? myCardHasDrawn
-        ? 'あなたのカードにある数字です'
-        : 'あなたのカードにはない数字です'
-      : showVoteOverlay
-        ? '結果発表まで非表示です'
-        : round?.isBonusRound
-          ? 'ボーナス結果を待っています'
-          : '数字が確定すると表示されます';
-  const bingoValue = state.hasBingo ? '達成' : `${cellsToBingo}`;
-  const bingoDetail = state.hasBingo
-    ? 'そのまま結果発表をお待ちください'
-    : `開放 ${openedCount}/25 マス`;
-  const noticeMessage = error;
-  const shellSubtitle =
-    showBonusOverlay
-      ? '好きなマスを1つ選んで確定してください。'
-      : showVoteOverlay
-        ? state.currentVote
-          ? '投票済みです。結果発表までそのままお待ちください。'
-          : '表示されている2択に回答してください。'
-        : activeCustomQuestionRequest && !isRequestedAuthor
-          ? `${activeCustomQuestionRequest.participantName}さんが質問を作成中です。`
-          : !round
-            ? '次のラウンド開始を待っています。'
-            : state.hasBingo
-              ? 'ビンゴ達成です。結果発表をお待ちください。'
-              : round.isBonusRound && round.pendingBonusSelectorCount > 0
-                ? '対象者のボーナスマス選択が終わるまでお待ちください。'
-                : 'カードと結果を確認しながら次の進行を待てます。';
+
+  const statusStyles = {
+    idle: 'from-white/[0.03] to-transparent text-slate-400 border-white/[0.04]',
+    vote: 'from-purple-500/10 to-transparent text-purple-300 border-purple-500/15',
+    result: 'from-emerald-500/10 to-transparent text-emerald-300 border-emerald-500/15',
+    bonus: 'from-amber-500/10 to-transparent text-amber-300 border-amber-500/15',
+    wait: 'from-white/[0.03] to-transparent text-slate-400 border-white/[0.04]',
+  }[status.tone];
+
+  const drawnNumbers = state.drawnNumbers ?? [];
 
   return (
-    <Shell
-      title="ビンゴ"
-      subtitle={shellSubtitle}
-      right={
-        <div className="space-y-2 text-right">
-          <StatusChip connected={connected} />
-          {state.hasBingo && (
-            <div className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 text-[11px] font-semibold tracking-[0.08em] text-amber-200">
-              ビンゴ
-            </div>
-          )}
-        </div>
-      }
-    >
+    <>
+    <Shell>
+      {/* ── Bingo winner announcement ── */}
       {bingoAnnouncement && (
         <div
-          className="pointer-events-none absolute inset-x-0 top-0 z-50 flex justify-center px-4 sm:px-6"
-          style={{ paddingTop: 'calc(env(safe-area-inset-top) + 4rem)' }}
+          className="pointer-events-none absolute inset-x-0 top-0 z-50 flex justify-center px-4"
+          style={{ paddingTop: 'calc(env(safe-area-inset-top) + 1rem)' }}
         >
-          <div className="w-full max-w-md rounded-[1.75rem] border border-amber-300/30 bg-[linear-gradient(135deg,rgba(82,26,102,0.96),rgba(32,18,48,0.98))] px-5 py-5 text-center shadow-[0_30px_80px_rgba(0,0,0,0.45)] backdrop-blur">
-            <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-[11px] font-semibold tracking-[0.08em] text-amber-100">
-              <span className="h-2 w-2 rounded-full bg-amber-300 shadow-[0_0_16px_rgba(252,211,77,0.85)]" />
-              ビンゴ達成
-            </div>
-            <p className="mt-4 text-3xl font-bold text-white">
+          <div className="animate-pop-in w-full max-w-md rounded-2xl border border-amber-400/20 bg-gradient-to-r from-amber-600/90 to-orange-600/90 px-5 py-5 text-center shadow-[0_16px_48px_rgba(245,158,11,0.3)] backdrop-blur">
+            <p className="text-xs font-bold uppercase tracking-widest text-amber-200/70">BINGO!</p>
+            <p className="mt-1 text-xl font-black text-white">
               {bingoAnnouncement}
-            </p>
-            <p className="mt-2 text-sm leading-6 text-amber-100/85">
-              そのまま結果発表をお待ちください。
             </p>
           </div>
         </div>
       )}
 
+      {/* ── Custom question overlay ── */}
       {showCustomQuestionOverlay && activeCustomQuestionRequest && (
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-40 flex items-center justify-center bg-black/75 px-4 backdrop-blur-sm sm:px-6"
-          style={{
-            paddingTop: 'calc(env(safe-area-inset-top) + 1.5rem)',
-            paddingBottom: 'calc(env(safe-area-inset-bottom) + 5rem)',
-          }}
+          className="fixed inset-0 z-40 overflow-y-auto bg-black/70 backdrop-blur-sm"
         >
-          <div className="w-full max-w-xl translate-y-[-4vh] rounded-[1.75rem] border border-[#690dab]/25 bg-[#1a1022] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.45)] sm:translate-y-[-6vh]">
-            <p className="text-xs font-semibold tracking-[0.08em] text-[#d8b4fe]">
-              質問作成の依頼が届きました
-            </p>
-            <h2 className="mt-3 text-2xl font-bold text-white">
-              2択の質問を入力してください
-            </h2>
-            <p className="mt-3 text-sm leading-6 text-slate-300">
-              管理者から質問作成が依頼されています。入力した内容は管理者が確認してから使用します。
-            </p>
-
-            <div className="mt-5 space-y-3">
-              <input
-                type="text"
-                value={customQuestion}
-                onChange={(e) => setCustomQuestion(e.target.value)}
-                placeholder="質問文"
-                className="w-full rounded-2xl border border-white/10 bg-[#241630] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-[#690dab] focus:ring-2 focus:ring-[#690dab]/30"
-                maxLength={120}
-              />
-              <div className="grid gap-3 sm:grid-cols-2">
+          <div
+            className="flex min-h-full items-center justify-center px-4 py-6"
+            style={{
+              paddingTop: 'calc(env(safe-area-inset-top) + 1rem)',
+              paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)',
+            }}
+          >
+            <div className="animate-slide-up w-full max-w-md rounded-2xl border border-purple-500/15 bg-gradient-to-b from-[#150b24] to-[#0d0618] p-5 shadow-[0_24px_64px_rgba(0,0,0,0.5)]">
+              <h2 className="text-lg font-bold text-white">
+                2択の質問を作ってください
+              </h2>
+              <div className="mt-4 space-y-3">
                 <input
                   type="text"
-                  value={customOptionA}
-                  onChange={(e) => setCustomOptionA(e.target.value)}
-                  placeholder="選択肢 A"
-                  className="w-full rounded-2xl border border-white/10 bg-[#241630] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-[#690dab] focus:ring-2 focus:ring-[#690dab]/30"
-                  maxLength={40}
+                  value={customQuestion}
+                  onChange={(e) => setCustomQuestion(e.target.value)}
+                  placeholder="質問文"
+                  className="w-full rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-purple-500/40 focus:ring-2 focus:ring-purple-500/20"
+                  maxLength={120}
                 />
-                <input
-                  type="text"
-                  value={customOptionB}
-                  onChange={(e) => setCustomOptionB(e.target.value)}
-                  placeholder="選択肢 B"
-                  className="w-full rounded-2xl border border-white/10 bg-[#241630] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-[#690dab] focus:ring-2 focus:ring-[#690dab]/30"
-                  maxLength={40}
-                />
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    value={customOptionA}
+                    onChange={(e) => setCustomOptionA(e.target.value)}
+                    placeholder="選択肢 A"
+                    className="w-full rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-purple-500/40 focus:ring-2 focus:ring-purple-500/20"
+                    maxLength={40}
+                  />
+                  <input
+                    type="text"
+                    value={customOptionB}
+                    onChange={(e) => setCustomOptionB(e.target.value)}
+                    placeholder="選択肢 B"
+                    className="w-full rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-purple-500/40 focus:ring-2 focus:ring-purple-500/20"
+                    maxLength={40}
+                  />
+                </div>
+                <button
+                  onClick={handleSubmitCustomQuestion}
+                  disabled={customQuestionLoading}
+                  className="w-full rounded-xl bg-gradient-to-r from-purple-600 to-violet-600 px-4 py-3.5 text-sm font-bold text-white shadow-lg transition active:scale-[0.98] disabled:cursor-not-allowed disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 disabled:shadow-none"
+                >
+                  {customQuestionLoading ? '送信中...' : '送信する'}
+                </button>
               </div>
-              <button
-                onClick={handleSubmitCustomQuestion}
-                disabled={customQuestionLoading}
-                className="w-full rounded-2xl border-b-4 border-black/20 bg-[#690dab] px-4 py-4 text-sm font-black uppercase tracking-[0.16em] text-white shadow-[0_14px_30px_rgba(105,13,171,0.35)] transition hover:bg-[#7a18c1] disabled:cursor-not-allowed disabled:border-transparent disabled:bg-slate-700 disabled:text-slate-400 disabled:shadow-none"
-              >
-                {customQuestionLoading ? '送信中...' : '質問案を送信'}
-              </button>
+              {customQuestionFeedback && (
+                <p className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2 text-sm text-slate-300">
+                  {customQuestionFeedback}
+                </p>
+              )}
             </div>
-
-            {customQuestionFeedback && (
-              <p className="mt-4 rounded-2xl border border-white/10 bg-black/10 px-4 py-3 text-sm text-slate-200">
-                {customQuestionFeedback}
-              </p>
-            )}
           </div>
         </div>
       )}
 
+      {/* ── Vote overlay ── */}
       {showVoteOverlay && round && (
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm sm:px-6"
-          style={{
-            paddingTop: 'calc(env(safe-area-inset-top) + 1.5rem)',
-            paddingBottom: 'calc(env(safe-area-inset-bottom) + 5rem)',
-          }}
+          className="fixed inset-0 z-40 overflow-y-auto bg-black/70 backdrop-blur-sm"
         >
-          <div className="w-full max-w-xl translate-y-[-4vh] sm:translate-y-[-6vh]">
-            <div className="mb-3 rounded-2xl border border-[#690dab]/25 bg-[#140a1c]/90 px-4 py-3 text-center shadow-[0_14px_40px_rgba(0,0,0,0.28)]">
-              <p className="text-xs font-semibold tracking-[0.08em] text-[#d8b4fe]">
-                投票受付中
-              </p>
-              <p className="mt-2 text-sm text-slate-300">
-                スクロール不要で、この場で回答できます。
-              </p>
+          <div
+            className="flex min-h-full items-center justify-center px-4 py-6"
+            style={{
+              paddingTop: 'calc(env(safe-area-inset-top) + 1rem)',
+              paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)',
+            }}
+          >
+            <div className="w-full max-w-md">
+              {round.questionImageUrl && (
+                <div className="mb-3 overflow-hidden rounded-2xl ring-1 ring-white/10 animate-slide-up">
+                  <img
+                    src={round.questionImageUrl}
+                    alt="質問画像"
+                    className="max-h-40 w-full object-cover"
+                  />
+                </div>
+              )}
+
+              <VotePanel
+                question={round.question}
+                optionA={round.optionA}
+                optionB={round.optionB}
+                optionAImageUrl={round.optionAImageUrl}
+                optionBImageUrl={round.optionBImageUrl}
+                myVote={state.currentVote}
+                disabled={!!state.currentVote}
+                onVote={handleVote}
+                roundTypeLabel={roundTypeLabel}
+              />
             </div>
-
-            {round.questionImageUrl && (
-              <div className="mb-3 overflow-hidden rounded-2xl border border-white/10 bg-[#140a1c]/90 shadow-[0_14px_40px_rgba(0,0,0,0.28)]">
-                <img
-                  src={round.questionImageUrl}
-                  alt="質問画像"
-                  className="max-h-64 w-full object-cover"
-                />
-              </div>
-            )}
-
-            <VotePanel
-              question={round.question}
-              optionA={round.optionA}
-              optionB={round.optionB}
-              optionAImageUrl={round.optionAImageUrl}
-              optionBImageUrl={round.optionBImageUrl}
-              myVote={state.currentVote}
-              disabled={!!state.currentVote}
-              onVote={handleVote}
-            />
           </div>
         </div>
       )}
 
+      {/* ── Bonus overlay ── */}
       {showBonusOverlay && round && (
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-40 flex items-center justify-center bg-black/75 px-4 backdrop-blur-sm sm:px-6"
-          style={{
-            paddingTop: 'calc(env(safe-area-inset-top) + 1.5rem)',
-            paddingBottom: 'calc(env(safe-area-inset-bottom) + 5rem)',
-          }}
+          className="fixed inset-0 z-40 overflow-y-auto bg-black/70 backdrop-blur-sm"
         >
-          <div className="w-full max-w-xl translate-y-[-4vh] rounded-[1.75rem] border border-amber-300/25 bg-[#1a1022] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.45)] sm:translate-y-[-6vh]">
-            <p className="text-xs font-semibold tracking-[0.08em] text-amber-200">
-              {round.bonusRoundType === 'QUIZ' ? 'ボーナス問題' : 'ボーナスタイム'}
-            </p>
-            <h2 className="hidden">
-              好きなマスを1つ選んでください
-            </h2>
-            <p className="hidden">
-              多数派を選べたので、追加で1マス開けられます。開けたいマスをタップして確定してください。
-            </p>
-
-            <h2 className="mt-3 text-2xl font-bold text-white">
-              好きなマスを1つ選んでください
-            </h2>
-            <p className="mt-3 text-sm leading-6 text-slate-300">
-              {round.bonusRoundType === 'QUIZ'
-                ? '正解した人だけがボーナスで1マス開けられます。タップして確定してください。'
-                : '多数派だった人だけがボーナスで1マス開けられます。タップして確定してください。'}
-            </p>
-
-            <div className="mt-5">
-              <BingoCard
-                card={state.card}
-                size="md"
-                selectableCellIndexes={bonusSelectableIndexes}
-                selectedCellIndex={bonusSelection}
-                onCellClick={setBonusSelection}
-              />
-            </div>
-
-            <p className="mt-4 text-center text-sm text-amber-100/85">
-              {bonusSelection != null
-                ? `${state.card.numbers[bonusSelection]}番を開けます。内容を確認して確定してください。`
-                : '開けたいマスを1つタップすると、確定ボタンの内容が変わります。'}
-            </p>
-
-            <button
-              onClick={handleSubmitBonusCell}
-              disabled={bonusLoading || bonusSelection == null}
-              className="mt-5 w-full rounded-2xl border-b-4 border-black/20 bg-amber-500 px-4 py-4 text-sm font-black uppercase tracking-[0.16em] text-slate-950 shadow-[0_14px_30px_rgba(245,158,11,0.35)] transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:border-transparent disabled:bg-slate-700 disabled:text-slate-400 disabled:shadow-none"
-            >
-              {bonusLoading
-                ? '確定中...'
-                : bonusSelection != null
-                  ? `${state.card.numbers[bonusSelection]}番を開ける`
-                  : 'このマスを開ける'}
-            </button>
-
-            {bonusFeedback && (
-              <p className="mt-4 rounded-2xl border border-white/10 bg-black/10 px-4 py-3 text-sm text-slate-200">
-                {bonusFeedback}
+          <div
+            className="flex min-h-full items-center justify-center px-4 py-6"
+            style={{
+              paddingTop: 'calc(env(safe-area-inset-top) + 1rem)',
+              paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)',
+            }}
+          >
+            <div className="animate-slide-up w-full max-w-md rounded-2xl border border-amber-400/15 bg-gradient-to-b from-[#1a1020] to-[#0d0618] p-5 shadow-[0_24px_64px_rgba(0,0,0,0.5)]">
+              <div className="mb-1 inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-[11px] font-bold text-amber-400 ring-1 ring-amber-500/20">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(245,158,11,0.8)]" />
+                ボーナス
+              </div>
+              <h2 className="mt-2 text-lg font-bold text-white">
+                好きなマスを選ぼう
+              </h2>
+              <p className="mt-1 text-sm text-slate-400">
+                タップして確定
               </p>
-            )}
+
+              <div className="mt-4">
+                <BingoCard
+                  card={state.card}
+                  size="md"
+                  selectableCellIndexes={bonusSelectableIndexes}
+                  selectedCellIndex={bonusSelection}
+                  onCellClick={setBonusSelection}
+                />
+              </div>
+
+              <button
+                onClick={handleSubmitBonusCell}
+                disabled={bonusLoading || bonusSelection == null}
+                className="mt-4 w-full rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-3.5 text-sm font-bold text-slate-950 shadow-lg transition active:scale-[0.98] disabled:cursor-not-allowed disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 disabled:shadow-none"
+              >
+                {bonusLoading
+                  ? '確定中...'
+                  : bonusSelection != null
+                    ? `${state.card.numbers[bonusSelection]}番を開ける`
+                    : 'マスを選んでください'}
+              </button>
+
+              {bonusFeedback && (
+                <p className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2 text-sm text-slate-300">
+                  {bonusFeedback}
+                </p>
+              )}
+            </div>
           </div>
         </div>
       )}
 
-      <main
-        className="flex flex-1 min-h-0 flex-col overflow-hidden"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-      >
-        <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-4">
-          <section className="grid grid-cols-3 gap-2">
-            <StatTile
-              label="進行"
-              value={progressValue}
-              detail={progressDetail}
-              tone="default"
-            />
-            <StatTile
-              label="今回の数字"
-              value={drawnDisplayLabel}
-              detail={numberDetail}
-              tone={round?.isBonusRound ? 'amber' : 'violet'}
-            />
-            <StatTile
-              label="ビンゴまで"
-              value={bingoValue}
-              detail={bingoDetail}
-              tone="emerald"
-            />
-          </section>
-
-          <section className="flex min-h-0 flex-1 flex-col rounded-[1.75rem] border border-white/10 bg-white/5 p-3 shadow-[0_20px_60px_rgba(0,0,0,0.25)]">
-            <div className="flex items-center justify-between px-1">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold tracking-[0.08em] text-slate-400">
-                  あなたのカード
-                </p>
-                <p className="mt-1 truncate text-base font-semibold text-white">
-                  {state.name}
-                </p>
-              </div>
-              <div className="ml-3 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
-                {round ? `ラウンド ${round.roundNumber}` : '待機中'}
-              </div>
+      {/* ━━━━━━━━━━ Main game content ━━━━━━━━━━ */}
+      <main className="flex flex-1 min-h-0 flex-col overflow-hidden">
+        {/* ── Header ── */}
+        <div className="flex items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            {/* Avatar initial */}
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-purple-600 to-violet-700 text-sm font-black text-white shadow-[0_4px_12px_rgba(139,92,246,0.3)]">
+              {state.name.charAt(0)}
             </div>
-
-            <div className="flex min-h-0 flex-1 items-center justify-center py-3">
-              <div className="w-full max-w-[21rem]">
-                <BingoCard
-                  card={state.card}
-                  highlightNumber={
-                    round && !round.isBonusRound ? round.drawnNumber ?? undefined : undefined
-                  }
-                  size="sm"
-                />
-              </div>
+            <div className="min-w-0">
+              <h1 className="truncate text-sm font-bold text-white">{state.name}</h1>
+              <StatusDot connected={connected} />
             </div>
-          </section>
-
-          <div className="space-y-2 pb-1">
-            {resultLabel && !showVoteOverlay && round && (
-              <section className="rounded-2xl border border-white/10 bg-black/10 px-4 py-3 shadow-[0_10px_30px_rgba(0,0,0,0.16)]">
-                <p className="text-[10px] font-semibold tracking-[0.08em] text-slate-400">
-                  直前の結果
-                </p>
-                <div className="mt-2 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-white">{resultLabel}</p>
-                    <p className="mt-1 text-[11px] text-slate-300">
-                      {roundOutcome.descriptor}: {roundOutcome.choice}
-                      {state.currentVote ? ` / あなた: ${state.currentVote}` : ''}
-                    </p>
-                  </div>
-                  <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-slate-200">
-                    {round.isBonusRound ? '★' : drawnDisplayLabel}
-                  </div>
-                </div>
-              </section>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {state.hasBingo && (
+              <span className="animate-pop-in rounded-full bg-gradient-to-r from-amber-500 to-orange-500 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-slate-950 shadow-[0_4px_16px_rgba(245,158,11,0.4)]">
+                BINGO!
+              </span>
             )}
-
-            <section className={clsx('rounded-2xl border px-4 py-3 text-center shadow-sm', banner.tone)}>
-              <p className="text-[10px] font-semibold tracking-[0.08em]">{banner.eyebrow}</p>
-              <p className="mt-1 text-lg font-semibold text-white">{banner.title}</p>
-              <p className="mt-1 text-xs leading-5 text-slate-300">{banner.subtitle}</p>
-            </section>
-
-            {noticeMessage && (
-              <p className="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-                {noticeMessage}
-              </p>
-            )}
+            {/* Progress ring + counts */}
+            <div className="relative">
+              <ProgressRing opened={openedCount} total={25} />
+              <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-purple-300">
+                {openedCount}
+              </span>
+            </div>
+            {/* History button */}
+            <button
+              onClick={() => setShowHistory(true)}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.04] text-slate-400 ring-1 ring-white/[0.06] transition hover:bg-white/[0.08]"
+              title="出た番号の履歴"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </button>
           </div>
         </div>
+
+        {/* ── Status bar (VOTING / WAITING / etc.) ── */}
+        {round?.status !== 'COMPLETED' && (
+          <div className={clsx(
+            'mx-4 mb-3 flex items-center justify-center gap-2 rounded-xl border bg-gradient-to-r px-4 py-2 text-sm font-medium',
+            statusStyles,
+          )}>
+            {roundTypeLabel && round?.status !== 'VOTING' && (
+              <span className={clsx(
+                'rounded-full px-2 py-0.5 text-[10px] font-bold ring-1',
+                round?.bonusRoundType === 'QUIZ' || round?.isBonusRound
+                  ? 'bg-amber-500/10 text-amber-400 ring-amber-500/20'
+                  : 'bg-white/[0.04] text-slate-500 ring-white/[0.06]',
+              )}>
+                {roundTypeLabel}
+              </span>
+            )}
+            {status.text}
+          </div>
+        )}
+
+        {/* ── Bingo card (hero) ── */}
+        <div className="flex flex-1 min-h-0 flex-col px-4">
+          {/* ── Result panel (COMPLETED, above bingo card) ── */}
+          {round?.status === 'COMPLETED' && !showVoteOverlay && (() => {
+            const myVote = state.currentVote ?? round.myVote;
+            const isCorrect = myVote === roundOutcome.choice; // 多数派 or クイズ正解
+            const isQuiz = round.bonusRoundType === 'QUIZ';
+
+            // サマリーをパーツに分解: { text, green } の配列
+            type Part = { text: string; green: boolean };
+            let parts: Part[] = [];
+
+            if (round.isBonusRound) {
+              parts = [{ text: iOpenedACell ? 'ボーナスでマスが開きました！' : 'ボーナス対象外でした', green: iOpenedACell }];
+            } else if (myVote) {
+              const num = round.drawnNumber;
+              if (isQuiz) {
+                if (isCorrect && iOpenedACell) {
+                  parts = [{ text: `正解！${num}番のマスが開きました！`, green: true }];
+                } else if (isCorrect && !iOpenedACell) {
+                  parts = [
+                    { text: '正解でしたが、', green: true },
+                    { text: `${num}番はシートにありませんでした`, green: false },
+                  ];
+                } else {
+                  parts = [{ text: `不正解でした。${num}番はシートにありませんでした`, green: false }];
+                }
+              } else {
+                if (isCorrect && iOpenedACell) {
+                  parts = [{ text: `あなたは多数派でした。${num}番のマスが開きました！`, green: true }];
+                } else if (isCorrect && !iOpenedACell) {
+                  parts = [
+                    { text: 'あなたは多数派でしたが、', green: true },
+                    { text: `${num}番はシートにありませんでした`, green: false },
+                  ];
+                } else if (!isCorrect && iOpenedACell) {
+                  parts = [{ text: `あなたは少数派でしたが、${num}番のマスが開きました！`, green: false }];
+                } else {
+                  parts = [{ text: `あなたは少数派でした。${num}番はシートにありませんでした`, green: false }];
+                }
+              }
+            } else if (round.drawnNumber) {
+              parts = [{ text: `今回の番号は ${round.drawnNumber} でした`, green: false }];
+            }
+
+            return (
+              <div className="mb-3 animate-slide-up rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 backdrop-blur">
+                {/* A/B choices */}
+                {roundOutcome.label && (
+                  <div className="mb-3 grid grid-cols-2 gap-2">
+                    {(['A', 'B'] as const).map((choice) => {
+                      const label = choice === 'A' ? round.optionA : round.optionB;
+                      const choiceIsMajority = roundOutcome.choice === choice;
+                      const choiceIsMyVote = myVote === choice;
+                      return (
+                        <div
+                          key={choice}
+                          className={clsx(
+                            'rounded-lg px-3 py-2 ring-1',
+                            choiceIsMajority && choiceIsMyVote
+                              ? 'bg-emerald-500/15 ring-emerald-500/40'
+                              : choiceIsMajority
+                              ? 'bg-white/[0.05] ring-white/15'
+                              : choiceIsMyVote
+                              ? 'bg-rose-500/10 ring-rose-500/30'
+                              : 'bg-white/[0.02] ring-white/[0.05]',
+                          )}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <span className={clsx(
+                              'shrink-0 text-[10px] font-black',
+                              choiceIsMajority && choiceIsMyVote ? 'text-emerald-400'
+                              : choiceIsMajority ? 'text-slate-300'
+                              : choiceIsMyVote ? 'text-rose-400'
+                              : 'text-slate-600',
+                            )}>{choice}</span>
+                            <span className="truncate text-xs font-medium text-slate-200">{label}</span>
+                          </div>
+                          <div className="mt-1 flex items-center gap-1">
+                            {choiceIsMajority && (
+                              <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[9px] font-bold text-slate-300">多数派</span>
+                            )}
+                            {choiceIsMyVote && (
+                              <span className={clsx(
+                                'rounded-full px-1.5 py-0.5 text-[9px] font-bold',
+                                choiceIsMajority ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400',
+                              )}>あなた</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Unified summary sentence */}
+                {parts.length > 0 && (
+                  <p className="text-sm font-semibold">
+                    {parts.map((part, i) => (
+                      <span key={i} className={part.green ? 'text-emerald-400' : 'text-rose-400'}>
+                        {part.text}
+                      </span>
+                    ))}
+                  </p>
+                )}
+              </div>
+            );
+          })()}
+
+          <div className="flex min-h-0 flex-1 items-center justify-center">
+            <div className="w-full max-w-[22rem]">
+              <BingoCard
+                card={state.card}
+                highlightNumber={
+                  round && !round.isBonusRound ? round.drawnNumber ?? undefined : undefined
+                }
+                size="sm"
+              />
+            </div>
+          </div>
+        </div>
+
+        {error && (
+          <div className="px-4 pb-3">
+            <p className="rounded-xl border border-rose-500/15 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
+              {error}
+            </p>
+          </div>
+        )}
       </main>
     </Shell>
+
+      {/* ── History drawer (outside Shell to avoid overflow-hidden clipping) ── */}
+      {showHistory && (
+        <HistoryDrawer
+          drawnNumbers={drawnNumbers}
+          cardNumbers={state.card.numbers}
+          openedCells={state.card.openedCells}
+          onClose={() => setShowHistory(false)}
+        />
+      )}
+    </>
   );
 }
