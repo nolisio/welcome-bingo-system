@@ -5,6 +5,7 @@ import { CENTER_CELL_INDEX } from '../lib/bingoCard';
 import { setPrismaForTesting } from '../lib/prisma';
 import {
   closeVoting,
+  getGame,
   getParticipantView,
   registerParticipant,
   requestCustomQuestion,
@@ -35,6 +36,7 @@ type BingoCardRow = {
 type MockPrismaClient = PrismaClient & {
   __controls: {
     failNextBingoCardUpdate: boolean;
+    seedColdBootData: () => void;
   };
 };
 
@@ -48,10 +50,37 @@ function createMockPrisma(): MockPrismaClient {
   let customQuestionCount = 0;
   const controls = {
     failNextBingoCardUpdate: false,
+    seedColdBootData: () => {
+      const participant: ParticipantRow = {
+        id: 'cold-boot-participant-1',
+        name: '再起動テスト参加者',
+        sessionId: 'cold-boot-session-1',
+        isNewEmployee: false,
+      };
+      participantsById.set(participant.id, participant);
+      participantsBySessionId.set(participant.sessionId, participant.id);
+      bingoCardsByParticipantId.set(participant.id, {
+        id: 'cold-boot-card-1',
+        participantId: participant.id,
+        numbers: Array.from({ length: 25 }, (_, index) => index + 1),
+        openedCells: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      roundsById.set('cold-boot-round-1', {
+        id: 'cold-boot-round-1',
+        gameId: 'cold-boot-game-1',
+        roundNumber: 1,
+        status: 'COMPLETED',
+      });
+    },
   };
 
   const prisma = {
     participant: {
+      async count() {
+        return participantsById.size;
+      },
       async upsert({
         where,
         update,
@@ -113,6 +142,9 @@ function createMockPrisma(): MockPrismaClient {
       },
     },
     bingoCard: {
+      async count() {
+        return bingoCardsByParticipantId.size;
+      },
       async findUnique({ where }: { where: { participantId: string } }) {
         return bingoCardsByParticipantId.get(where.participantId) ?? null;
       },
@@ -139,6 +171,11 @@ function createMockPrisma(): MockPrismaClient {
         where: { participantId: string };
         data: { numbers?: number[]; openedCells?: number };
       }) {
+        if (controls.failNextBingoCardUpdate) {
+          controls.failNextBingoCardUpdate = false;
+          throw new Error('mocked bingo card persistence failure');
+        }
+
         const row = bingoCardsByParticipantId.get(where.participantId);
         if (!row) {
           throw new Error('bingo card not found');
@@ -208,6 +245,9 @@ function createMockPrisma(): MockPrismaClient {
       },
     },
     round: {
+      async count() {
+        return roundsById.size;
+      },
       async create({ data }: { data: Record<string, unknown> }) {
         roundsById.set(String(data.id), { ...data });
         return data;
@@ -234,6 +274,9 @@ function createMockPrisma(): MockPrismaClient {
       },
     },
     vote: {
+      async count() {
+        return votesById.size;
+      },
       async create({ data }: { data: Record<string, unknown> }) {
         const row = { id: `vote-${votesById.size + 1}`, ...data };
         votesById.set(String(row.id), row);
@@ -298,6 +341,16 @@ test('新入社員フラグを開始前に戻すと中央マス優遇も取り�
   const correctedJoin = await registerParticipant('山田', 'session-yamada', false);
   assert.equal(correctedJoin.isNewEmployee, false);
   assert.equal(isCenterOpen(correctedJoin.card.openedCells), false);
+});
+
+test('再起動でDBに残骸がある場合はゲーム開始前にリセットを要求する', async () => {
+  mockPrisma.__controls.seedColdBootData();
+
+  await assert.rejects(
+    () => startGame(),
+    /最初に「ゲームをリセット」を実行してください/,
+  );
+  assert.equal(getGame().status, 'WAITING');
 });
 
 test('ボーナスマス選択が残っている間は質問作成依頼を開始できない', async () => {

@@ -334,6 +334,35 @@ export function disconnectParticipant(socketId: string): void {
 
 export async function startGame(): Promise<void> {
   if (_game.status === 'ACTIVE') return;
+
+  // Cold boot after an unexpected restart can leave DB rows while in-memory
+  // runtime state is empty. Require an explicit reset before starting.
+  const hasInMemoryProgress =
+    Object.keys(_game.participants).length > 0 ||
+    hasStartedRoundProgress() ||
+    _game.drawnNumbers.length > 0;
+  if (!hasInMemoryProgress) {
+    const prisma = getPrisma();
+    const [participantCount, bingoCardCount, roundCount, voteCount] =
+      await prisma.$transaction([
+        prisma.participant.count(),
+        prisma.bingoCard.count(),
+        prisma.round.count(),
+        prisma.vote.count(),
+      ]);
+
+    if (
+      participantCount > 0 ||
+      bingoCardCount > 0 ||
+      roundCount > 0 ||
+      voteCount > 0
+    ) {
+      throw new Error(
+        'サーバー再起動後の整合性保護のため、最初に「ゲームをリセット」を実行してください',
+      );
+    }
+  }
+
   _game.status = 'ACTIVE';
 
   const prisma = getPrisma();
@@ -504,83 +533,116 @@ export async function closeVoting(): Promise<RoundState> {
   const round = _game.currentRound;
   round.status = 'CLOSED';
 
-  let countA = 0;
-  let countB = 0;
-  for (const choice of Object.values(round.votes)) {
-    if (choice === 'A') {
-      countA += 1;
-    } else {
-      countB += 1;
-    }
-  }
-
-  const majorityVote: VoteChoice | null =
-    countA > countB ? 'A' : countB > countA ? 'B' : null;
-  round.majorityVote = majorityVote;
-
-  const prisma = getPrisma();
-  const resultChoice = getRoundResultChoice(round);
-
-  if (round.bonusRoundType !== 'NONE') {
-    round.pendingBonusSelectors = Object.values(_game.participants)
-      .filter((participant) => {
-        const voted = round.votes[participant.id];
-        return (
-          resultChoice !== null &&
-          voted === resultChoice &&
-          hasUnopenedCell(participant.card.openedCells)
-        );
-      })
-      .map((participant) => participant.id);
-  } else {
-    for (const participant of Object.values(_game.participants)) {
-      const voted = round.votes[participant.id];
-      const isEligible = majorityVote !== null && voted === majorityVote;
-
-      if (!isEligible) {
-        continue;
+  try {
+    let countA = 0;
+    let countB = 0;
+    for (const choice of Object.values(round.votes)) {
+      if (choice === 'A') {
+        countA += 1;
+      } else {
+        countB += 1;
       }
+    }
 
-      const before = participant.card.openedCells;
-      const after = openCell(
-        participant.card.numbers,
-        participant.card.openedCells,
-        round.drawnNumber,
+    const majorityVote: VoteChoice | null =
+      countA > countB ? 'A' : countB > countA ? 'B' : null;
+    const resultChoice: VoteChoice | null =
+      round.bonusRoundType === 'QUIZ' ? round.correctChoice : majorityVote;
+
+    const pendingBonusSelectors =
+      round.bonusRoundType !== 'NONE'
+        ? Object.values(_game.participants)
+            .filter((participant) => {
+              const voted = round.votes[participant.id];
+              return (
+                resultChoice !== null &&
+                voted === resultChoice &&
+                hasUnopenedCell(participant.card.openedCells)
+              );
+            })
+            .map((participant) => participant.id)
+        : [];
+
+    const eligibleParticipants: ParticipantState[] = [];
+    const cardOpenUpdates: { participantId: string; openedCells: number }[] = [];
+
+    if (round.bonusRoundType === 'NONE') {
+      for (const participant of Object.values(_game.participants)) {
+        const voted = round.votes[participant.id];
+        const isEligible = majorityVote !== null && voted === majorityVote;
+
+        if (!isEligible) {
+          continue;
+        }
+
+        eligibleParticipants.push(participant);
+
+        const after = openCell(
+          participant.card.numbers,
+          participant.card.openedCells,
+          round.drawnNumber,
+        );
+
+        if (after !== participant.card.openedCells) {
+          cardOpenUpdates.push({
+            participantId: participant.id,
+            openedCells: after,
+          });
+        }
+      }
+    }
+
+    const prisma = getPrisma();
+    const persistenceWrites: Prisma.PrismaPromise<unknown>[] = [
+      prisma.round.update({
+        where: { id: round.id },
+        data: {
+          status: 'COMPLETED',
+          majorityVote,
+        },
+      }),
+    ];
+
+    for (const update of cardOpenUpdates) {
+      persistenceWrites.push(
+        prisma.bingoCard.update({
+          where: { participantId: update.participantId },
+          data: { openedCells: update.openedCells },
+        }),
+      );
+    }
+
+    await prisma.$transaction(persistenceWrites);
+
+    round.majorityVote = majorityVote;
+    round.pendingBonusSelectors = pendingBonusSelectors;
+
+    if (round.bonusRoundType === 'NONE') {
+      const openedByParticipantId = new Map(
+        cardOpenUpdates.map((update) => [update.participantId, update.openedCells]),
       );
 
-      if (after !== before) {
-        participant.card.openedCells = after;
-        round.cellOpeners.push(participant.id);
+      for (const participant of eligibleParticipants) {
+        const openedCells = openedByParticipantId.get(participant.id);
+        if (openedCells != null) {
+          participant.card.openedCells = openedCells;
+          round.cellOpeners.push(participant.id);
+        }
 
-        await prisma.bingoCard
-          .updateMany({
-            where: { participantId: participant.id },
-            data: { openedCells: after },
-          })
-          .catch((error: unknown) => {
-            console.error(
-              `[closeVoting] failed to persist card for participant ${participant.id} in round ${round.id}:`,
-              error,
-            );
-          });
+        addBingoWinner(participant, round);
       }
-
-      addBingoWinner(participant, round);
     }
+
+    round.status = 'COMPLETED';
+    _game.completedRounds.push(round);
+
+    return round;
+  } catch (error) {
+    round.status = 'VOTING';
+    round.majorityVote = null;
+    round.pendingBonusSelectors = [];
+    throw error;
   }
-
-  round.status = 'COMPLETED';
-  _game.completedRounds.push(round);
-
-  await prisma.round.update({
-    where: { id: round.id },
-    data: {
-      status: 'COMPLETED',
-      majorityVote,
-    },
-  });
-
-  return round;
 }
 
 export async function selectBonusCell(

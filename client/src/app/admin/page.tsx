@@ -26,6 +26,8 @@ const ROUND_STATUS_LABELS: Record<string, string> = {
   COMPLETED: '結果発表後',
 };
 
+const DRAW_NUMBER_MAX = 40;
+
 function AdminMetricCard({
   label,
   value,
@@ -788,7 +790,7 @@ export default function AdminPage() {
             <div className="flex flex-wrap gap-2">
               {(() => {
                 const lastDrawn = gameState?.drawnNumbers.at(-1);
-                return Array.from({ length: 75 }, (_, index) => index + 1).map((value) => {
+                return Array.from({ length: DRAW_NUMBER_MAX }, (_, index) => index + 1).map((value) => {
                   const drawn = gameState?.drawnNumbers.includes(value);
                   const isLast = lastDrawn === value;
                   return (
