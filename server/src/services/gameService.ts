@@ -771,13 +771,13 @@ export function getParticipantView(participantId: string) {
     card: participant.card,
     currentVote: participant.currentVote,
     canChooseBonusCell,
+    drawnNumbers: [..._game.drawnNumbers],
     customQuestionRequest: _game.customQuestionRequest,
     currentRound: currentRound
       ? {
           id: currentRound.id,
           roundNumber: currentRound.roundNumber,
-          drawnNumber:
-            currentRound.status !== 'VOTING' ? currentRound.drawnNumber : null,
+          drawnNumber: currentRound.drawnNumber,
           question: currentRound.question,
           optionA: currentRound.optionA,
           optionB: currentRound.optionB,

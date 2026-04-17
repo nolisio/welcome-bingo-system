@@ -12,6 +12,7 @@ interface VotePanelProps {
   myVote: VoteChoice | null;
   disabled: boolean;
   onVote: (choice: VoteChoice) => void;
+  roundTypeLabel?: string | null;
   className?: string;
 }
 
@@ -24,50 +25,60 @@ export default function VotePanel({
   myVote,
   disabled,
   onVote,
+  roundTypeLabel,
   className,
 }: VotePanelProps) {
-  const stage = myVote
-    ? {
-        label: '投票済み',
-        title: '司会が締切るまでお待ちください',
-        detail: 'この画面のままで大丈夫です。まもなく結果発表です。',
-      }
-    : {
-        label: '回答受付中',
-        title: 'どちらかを1つ選んでください',
-        detail: '回答後は自動で待機状態へ切り替わります。投票は1回のみです。',
-      };
-
   return (
     <section
       className={clsx(
-        'rounded-[1.75rem] border border-white/10 bg-[#1f122a] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.38)]',
+        'rounded-2xl animate-slide-up',
+        'bg-gradient-to-br from-[#1a0e2e]/95 via-[#150b24]/95 to-[#0f0a1a]/95',
+        'border border-purple-500/15',
+        'shadow-[0_16px_64px_rgba(0,0,0,0.5)]',
+        'backdrop-blur-xl',
+        'p-5',
         className,
       )}
     >
+      {/* Header area */}
       <div className="mb-5 text-center">
-        <p className="text-xs font-semibold tracking-[0.08em] text-[#d8b4fe]">
-          {stage.label}
-        </p>
-        <h2 className="mt-2 text-xl font-bold leading-8 text-white sm:text-2xl">
-          {stage.title}
-        </h2>
-        <p className="mt-3 text-xs font-medium tracking-[0.08em] text-slate-400">
-          現在の質問
-        </p>
-        <h3 className="mt-2 text-xl font-semibold leading-8 text-white sm:text-2xl">
+        {/* Round type badge */}
+        {roundTypeLabel && (
+          <div className="mb-3 flex justify-center">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-purple-500/20 to-violet-500/20 px-3 py-1 text-[11px] font-bold tracking-wide text-purple-300 ring-1 ring-purple-400/20">
+              <span className="h-1.5 w-1.5 rounded-full bg-purple-400 shadow-[0_0_6px_rgba(168,85,247,0.8)]" />
+              {roundTypeLabel}
+            </span>
+          </div>
+        )}
+
+        {/* Status */}
+        {myVote ? (
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-sm font-medium text-emerald-400 ring-1 ring-emerald-500/20">
+            <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+            </svg>
+            投票済み
+          </div>
+        ) : (
+          <p className="text-xs font-medium tracking-wide text-purple-300/70">
+            どちらかを選んでください
+          </p>
+        )}
+
+        {/* Question */}
+        <h2 className="mt-3 text-lg font-bold leading-7 text-white sm:text-xl">
           {question}
-        </h3>
-        <p className="mt-3 text-sm text-slate-300">
-          {stage.detail}
-        </p>
+        </h2>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      {/* Option buttons */}
+      <div className="grid grid-cols-2 gap-3">
         {(['A', 'B'] as VoteChoice[]).map((choice) => {
           const label = choice === 'A' ? optionA : optionB;
           const imageUrl = choice === 'A' ? optionAImageUrl : optionBImageUrl;
           const selected = myVote === choice;
+          const isA = choice === 'A';
 
           return (
             <button
@@ -75,43 +86,63 @@ export default function VotePanel({
               onClick={() => !disabled && onVote(choice)}
               disabled={disabled}
               className={clsx(
-                'rounded-[1.35rem] border px-4 py-5 text-left transition-all duration-200',
-                'focus:outline-none focus:ring-2 focus:ring-[#690dab]/40',
+                'group relative overflow-hidden rounded-xl border p-3 text-left transition-all duration-300',
+                'focus:outline-none',
                 selected
-                  ? 'border-[#690dab] bg-[#690dab] text-white shadow-[0_0_18px_rgba(105,13,171,0.5)] ring-2 ring-[#690dab]/30'
-                  : 'border-white/10 bg-[#241630] text-slate-100 hover:border-[#690dab]/40 hover:bg-[#2a1936]',
-                disabled && !selected && 'cursor-not-allowed opacity-60',
+                  ? [
+                      'border-purple-400/50',
+                      'bg-gradient-to-br from-purple-600/90 to-violet-700/90',
+                      'text-white',
+                      'shadow-[0_0_24px_rgba(139,92,246,0.4)]',
+                      'scale-[1.02]',
+                    ]
+                  : [
+                      'border-white/[0.06]',
+                      'bg-white/[0.03]',
+                      'text-slate-200',
+                      'hover:border-purple-400/30 hover:bg-white/[0.06]',
+                      'active:scale-[0.97]',
+                    ],
+                disabled && !selected && 'cursor-not-allowed opacity-40',
               )}
             >
-              {imageUrl && (
-                <div className="mb-4 overflow-hidden rounded-2xl border border-white/10 bg-black/10">
-                  <img
-                    src={imageUrl}
-                    alt={`Option ${choice}`}
-                    className="h-36 w-full object-cover"
-                  />
-                </div>
+              {/* Subtle gradient accent on each card */}
+              {!selected && (
+                <div
+                  className={clsx(
+                    'absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100',
+                    isA
+                      ? 'bg-gradient-to-br from-blue-500/5 to-transparent'
+                      : 'bg-gradient-to-br from-pink-500/5 to-transparent',
+                  )}
+                />
               )}
-              <span className="inline-flex rounded-full border border-white/10 bg-black/15 px-3 py-1 text-xs font-semibold tracking-[0.08em]">
-                選択肢 {choice}
-              </span>
-              <span className="mt-4 block text-xl font-semibold">{label}</span>
-              <span className="mt-2 block text-sm text-slate-300">
-                {selected
-                  ? 'この選択肢に投票済みです。'
-                  : 'タップしてこの選択肢に投票します。'}
-              </span>
+
+              <div className="relative">
+                {imageUrl && (
+                  <div className="mb-2.5 overflow-hidden rounded-lg ring-1 ring-white/10">
+                    <img
+                      src={imageUrl}
+                      alt={`選択肢 ${choice}`}
+                      className="h-24 w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    />
+                  </div>
+                )}
+                <span className={clsx(
+                  'inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-black',
+                  selected
+                    ? 'bg-white/20 text-white'
+                    : isA
+                      ? 'bg-blue-500/15 text-blue-300 ring-1 ring-blue-500/20'
+                      : 'bg-pink-500/15 text-pink-300 ring-1 ring-pink-500/20',
+                )}>
+                  {choice}
+                </span>
+                <span className="mt-1.5 block text-[15px] font-bold leading-snug">{label}</span>
+              </div>
             </button>
           );
         })}
-      </div>
-
-      <div className="mt-4 rounded-2xl border border-white/10 bg-black/10 px-4 py-3 text-center text-sm text-slate-300">
-        {myVote ? (
-          <span>司会が締切ると、自動で結果表示へ切り替わります。</span>
-        ) : (
-          '回答後はそのまま結果発表を待てます。'
-        )}
       </div>
     </section>
   );
