@@ -25,6 +25,7 @@ export interface PublicRound {
   isBonusRound: boolean;
   bonusRoundType: BonusRoundType;
   correctChoice: VoteChoice | null;
+  isQuiz: boolean;
   status: RoundStatus;
   majorityVote: VoteChoice | null;
   voteCount: number;
@@ -48,6 +49,7 @@ export interface CompletedRound {
   isBonusRound: boolean;
   bonusRoundType: BonusRoundType;
   correctChoice: VoteChoice | null;
+  isQuiz: boolean;
   majorityVote: VoteChoice | null;
   voteCount: number;
   bonusSelectionCount: number;
@@ -78,6 +80,7 @@ export interface ParticipantRound {
   isBonusRound: boolean;
   bonusRoundType: BonusRoundType;
   correctChoice: VoteChoice | null;
+  isQuiz: boolean;
   status: RoundStatus;
   majorityVote: VoteChoice | null;
   voteCount: number;

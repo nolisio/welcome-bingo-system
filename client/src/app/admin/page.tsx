@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { getSocket } from '@/lib/socket';
 import {
   AdminParticipantSummary,
-  BonusRoundType,
+
   BingoWinner,
   CustomQuestionRequestInfo,
   CustomQuestionReview,
@@ -177,7 +177,9 @@ export default function AdminPage() {
   const [questionImageUrl, setQuestionImageUrl] = useState('');
   const [optionAImageUrl, setOptionAImageUrl] = useState('');
   const [optionBImageUrl, setOptionBImageUrl] = useState('');
-  const [bonusRoundType, setBonusRoundType] = useState<BonusRoundType>('NONE');
+  const [isBonusRound, setIsBonusRound] = useState(false);
+  const [isQuizBonus, setIsQuizBonus] = useState(false);
+  const [isQuizMode, setIsQuizMode] = useState(false);
   const [correctChoice, setCorrectChoice] = useState<'A' | 'B'>('A');
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState('');
@@ -332,10 +334,17 @@ export default function AdminPage() {
       return;
     }
 
-    if (bonusRoundType === 'QUIZ' && !correctChoice) {
+    if (isQuizBonus && !correctChoice) {
       showFeedback('ボーナス問題では正解を選んでください。');
       return;
     }
+
+    if (isQuizMode && !correctChoice) {
+      showFeedback('クイズ問題では正解を選んでください。');
+      return;
+    }
+
+    const bonusRoundType = isQuizBonus ? 'QUIZ' : isBonusRound ? 'MAJORITY' : 'NONE';
 
     emitAdmin(
       'admin:start-round',
@@ -347,7 +356,8 @@ export default function AdminPage() {
         optionAImageUrl: optionAImageUrl || null,
         optionBImageUrl: optionBImageUrl || null,
         bonusRoundType,
-        correctChoice: bonusRoundType === 'QUIZ' ? correctChoice : null,
+        // ボーナスQUIZまたは通常クイズモードの場合にcorrectChoiceを送信
+        correctChoice: (isQuizBonus || isQuizMode) ? correctChoice : null,
       },
       (res) => {
         if (res?.ok) {
@@ -357,8 +367,10 @@ export default function AdminPage() {
           setQuestionImageUrl('');
           setOptionAImageUrl('');
           setOptionBImageUrl('');
-          setBonusRoundType('NONE');
+          setIsBonusRound(false);
+          setIsQuizBonus(false);
           setCorrectChoice('A');
+          setIsQuizMode(false);
         }
       },
     );
@@ -369,10 +381,10 @@ export default function AdminPage() {
   const handleStartRandomRound = () =>
     emitAdmin(
       'admin:start-random-round',
-      { bonusRoundType },
+      { bonusRoundType: isBonusRound ? 'MAJORITY' : 'NONE' },
       (res) => {
         if (res?.ok) {
-          setBonusRoundType('NONE');
+          setIsBonusRound(false);
           setCorrectChoice('A');
         }
       },
@@ -385,7 +397,9 @@ export default function AdminPage() {
     setQuestionImageUrl('');
     setOptionAImageUrl('');
     setOptionBImageUrl('');
-    setBonusRoundType('QUIZ');
+    setIsQuizBonus(true);
+    setIsBonusRound(false);
+    setIsQuizMode(false);
     setCorrectChoice('A');
     showFeedback('ボーナス問題のサンプルを入力しました。');
   };
@@ -397,7 +411,9 @@ export default function AdminPage() {
     setQuestionImageUrl('');
     setOptionAImageUrl('');
     setOptionBImageUrl('');
-    setBonusRoundType('QUIZ');
+    setIsQuizBonus(true);
+    setIsBonusRound(false);
+    setIsQuizMode(false);
     setCorrectChoice('A');
     showFeedback('ボーナス問題のサンプルを入力しました。');
   };
@@ -411,7 +427,9 @@ export default function AdminPage() {
     setQuestionImageUrl(preset.questionImageUrl);
     setOptionAImageUrl(preset.optionAImageUrl);
     setOptionBImageUrl(preset.optionBImageUrl);
-    setBonusRoundType('NONE');
+    setIsBonusRound(false);
+    setIsQuizBonus(false);
+    setIsQuizMode(false);
     setCorrectChoice('A');
     showFeedback(`「${preset.label}」を出題フォームへ反映しました。`);
   };
@@ -523,7 +541,10 @@ export default function AdminPage() {
     setQuestionImageUrl(preparedQuestion.imageUrl ?? '');
     setOptionAImageUrl(preparedQuestion.optionAImageUrl ?? '');
     setOptionBImageUrl(preparedQuestion.optionBImageUrl ?? '');
-    setBonusRoundType(preparedQuestion.kind === 'QUIZ' ? 'QUIZ' : 'NONE');
+    // QUIZをフォームに反映する際はボーナスにせず、クイズモードフラグで管理
+    setIsBonusRound(false);
+    setIsQuizBonus(false);
+    setIsQuizMode(preparedQuestion.kind === 'QUIZ');
     setCorrectChoice(preparedQuestion.correctChoice ?? 'A');
     showFeedback('質問プールの内容を手入力フォームへ反映しました。');
   };
@@ -585,21 +606,20 @@ export default function AdminPage() {
   const availableRandomPreparedQuestions = activeMajorityPreparedQuestions.filter(
     (item) => !item.usedInCurrentGame,
   );
-  const bonusRoundEnabled = bonusRoundType === 'MAJORITY';
-  const setBonusRoundEnabled = (enabled: boolean) =>
-    setBonusRoundType(enabled ? 'MAJORITY' : 'NONE');
   const startRoundButtonLabel =
-    bonusRoundType === 'QUIZ'
+    isQuizBonus
       ? 'ボーナス問題を開始'
-      : bonusRoundType === 'MAJORITY'
+      : isBonusRound
         ? 'ボーナスタイムを開始'
-        : '抽選してラウンド開始';
+        : isQuizMode
+          ? 'クイズとしてラウンド開始'
+          : '抽選してラウンド開始';
   const canStartGame = !loading && !hasActiveGame;
   const canStartManualRound =
     !loading && hasActiveGame && noActiveRound && !activeQuestionRequest && !hasPendingBonusSelections;
   const canStartRandomRound =
     canStartManualRound &&
-    bonusRoundType !== 'QUIZ' &&
+    !isQuizBonus &&
     availableRandomPreparedQuestions.length > 0;
   const nextAction = !hasActiveGame
     ? {
@@ -892,7 +912,7 @@ export default function AdminPage() {
               ))}
             </div>
           )}
-          {bonusRoundType === 'QUIZ' && (
+          {isQuizBonus && (
             <p className="text-xs text-sky-300">
               クイズボーナスでは、投票中は正解を非表示にし、結果発表後に正解者だけへ好きなマスの選択権を配ります。
             </p>
@@ -986,7 +1006,7 @@ export default function AdminPage() {
                   画像は <code>/question-assets/...</code> のように repo 内の公開パスで管理する想定です。
                 </p>
                 <p className="mt-2">
-                  クイズ問題を登録した場合は、管理画面で反映すると自動でボーナス問題として読み込まれます。
+                  クイズ問題を登録した場合は、出題フォームに反映すると「クイズモード」として読み込まれます。ボーナスマスの選択権を与えたい場合は「ボーナス問題を使う」ボタンで切り替えてください。
                 </p>
               </div>
             </div>
@@ -1269,20 +1289,74 @@ export default function AdminPage() {
             placeholder="質問画像URL"
             className="w-full rounded-xl bg-gray-800 px-4 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-          <label className="flex items-center justify-between rounded-xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+          <label className={clsx(
+            'flex items-center justify-between rounded-xl border px-4 py-3 text-sm',
+            isQuizMode || isQuizBonus
+              ? 'border-gray-700 bg-gray-800/40 text-gray-500 cursor-not-allowed'
+              : 'border-amber-400/20 bg-amber-400/10 text-amber-100',
+          )}>
             <span>
-              <strong className="font-bold text-white">ボーナスタイム</strong>
-              <span className="ml-2 text-amber-100/80">
-                結果発表後に、多数派だった参加者が好きなマスを1つ開けます。
+              <strong className={clsx('font-bold', isQuizMode || isQuizBonus ? 'text-gray-500' : 'text-white')}>
+                ボーナスタイム
+              </strong>
+              <span className="ml-2">
+                {isQuizMode || isQuizBonus
+                  ? 'クイズモード中はボーナスタイムを使えません。'
+                  : '結果発表後に、多数派だった参加者が好きなマスを1つ開けます。'}
               </span>
             </span>
             <input
               type="checkbox"
-              checked={bonusRoundEnabled}
-              onChange={(e) => setBonusRoundEnabled(e.target.checked)}
-              className="h-5 w-5 rounded border-white/20 bg-gray-900 text-amber-400 focus:ring-amber-400"
+              checked={isBonusRound}
+              onChange={(e) => setIsBonusRound(e.target.checked)}
+              disabled={isQuizMode || isQuizBonus}
+              className="h-5 w-5 rounded border-white/20 bg-gray-900 text-amber-400 focus:ring-amber-400 disabled:cursor-not-allowed"
             />
           </label>
+          {/* 通常クイズモード：正解選択UI（ボーナスなし） */}
+          {isQuizMode && !isQuizBonus && (
+            <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-4 text-sm text-emerald-100">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-xs font-semibold tracking-[0.08em] text-emerald-200">
+                    クイズモード（ボーナスなし）
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-emerald-100/85">
+                    正解者のマスが開きますが、ボーナスマスの選択権は発生しません。
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsQuizMode(false)}
+                  className="rounded-xl border border-white/10 bg-gray-900 px-4 py-3 text-sm font-bold text-white hover:border-rose-300/40 transition"
+                >
+                  クイズモードを解除
+                </button>
+              </div>
+              <div className="mt-4 rounded-xl border border-emerald-300/20 bg-black/10 p-4">
+                <p className="text-xs font-semibold tracking-[0.08em] text-emerald-200">正解</p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {(['A', 'B'] as const).map((choice) => (
+                    <button
+                      key={choice}
+                      type="button"
+                      onClick={() => setCorrectChoice(choice)}
+                      className={clsx(
+                        'rounded-xl border px-4 py-3 text-sm font-bold transition',
+                        correctChoice === choice
+                          ? 'border-emerald-300 bg-emerald-300 text-gray-950'
+                          : 'border-white/10 bg-gray-900 text-white hover:border-emerald-300/40',
+                      )}
+                    >
+                      {choice === 'A'
+                        ? `A: ${optionA || '選択肢A'}`
+                        : `B: ${optionB || '選択肢B'}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
           <div className="rounded-xl border border-sky-400/20 bg-sky-400/10 px-4 py-4 text-sm text-sky-100">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
@@ -1295,20 +1369,25 @@ export default function AdminPage() {
               </div>
               <button
                 type="button"
-                onClick={() =>
-                  setBonusRoundType((current) => (current === 'QUIZ' ? 'NONE' : 'QUIZ'))
-                }
+                onClick={() => {
+                  const next = !isQuizBonus;
+                  setIsQuizBonus(next);
+                  if (next) {
+                    setIsBonusRound(false);
+                    setIsQuizMode(false);
+                  }
+                }}
                 className={clsx(
                   'rounded-xl border px-4 py-3 text-sm font-bold transition',
-                  bonusRoundType === 'QUIZ'
+                  isQuizBonus
                     ? 'border-sky-300 bg-sky-300 text-gray-950'
                     : 'border-white/10 bg-gray-900 text-white hover:border-sky-300/40',
                 )}
               >
-                {bonusRoundType === 'QUIZ' ? 'ボーナス問題を解除' : 'ボーナス問題を使う'}
+                {isQuizBonus ? 'ボーナス問題を解除' : 'ボーナス問題を使う'}
               </button>
             </div>
-            {bonusRoundType === 'QUIZ' && (
+          {isQuizBonus && (
               <div className="mt-4 rounded-xl border border-sky-300/20 bg-black/10 p-4">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <p className="text-xs font-semibold tracking-[0.08em] text-sky-200">

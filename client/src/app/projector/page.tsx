@@ -56,10 +56,10 @@ function getPhaseTheme(status?: string | null) {
   }
 }
 
-function getHalfTone(choice: 'A' | 'B', outcomeChoice: 'A' | 'B' | null, status?: string | null) {
-  const isWinner = status === 'COMPLETED' && outcomeChoice === choice;
+function getHalfTone(choice: 'A' | 'B', outcomeChoice: 'A' | 'B' | null, status?: string | null, isTie?: boolean) {
+  const isWinner = status === 'COMPLETED' && (outcomeChoice === choice || isTie);
   const isLoser =
-    status === 'COMPLETED' && outcomeChoice != null && outcomeChoice !== choice;
+    status === 'COMPLETED' && !isTie && outcomeChoice != null && outcomeChoice !== choice;
 
   if (choice === 'A') {
     if (isWinner) {
@@ -128,12 +128,13 @@ export default function ProjectorPage() {
   const isClosed = currentStatus === 'CLOSED';
   const isCompleted = currentStatus === 'COMPLETED';
   const phaseTheme = getPhaseTheme(currentStatus);
+  const isQuiz = currentRound?.isQuiz ?? false;
   const outcomeChoice: 'A' | 'B' | null =
-    currentRound?.bonusRoundType === 'QUIZ'
-      ? currentRound.correctChoice ?? null
+    isQuiz
+      ? currentRound?.correctChoice ?? null
       : currentRound?.majorityVote ?? null;
-  const outcomeLabel =
-    currentRound?.bonusRoundType === 'QUIZ' ? '正解' : '多数派';
+  const isTie = !isQuiz && currentRound?.majorityVote === null;
+  const outcomeLabel = isQuiz ? '正解' : isTie ? '同票（全員正解）' : '多数派';
   const roundChipLabel = currentRound
     ? `第${currentRound.roundNumber}ラウンド`
     : 'ラウンド未開始';
@@ -152,7 +153,7 @@ export default function ProjectorPage() {
     ? '抽選結果'
     : isClosed
       ? '集計中'
-      : currentRound?.bonusRoundType === 'QUIZ'
+      : isQuiz
         ? 'クイズ'
         : '回答中';
   const centerBadgeValue =
@@ -162,15 +163,17 @@ export default function ProjectorPage() {
         : String(currentRound.drawnNumber ?? '')
       : isClosed
         ? '...'
-        : currentRound?.bonusRoundType === 'QUIZ'
+        : isQuiz
           ? '?'
           : 'VS';
   const centerBadgeNote =
-    isCompleted && outcomeChoice
-      ? `${outcomeLabel} ${outcomeChoice}`
+    isCompleted && (outcomeChoice || isTie)
+      ? isTie
+        ? '同票 全員マスが開きます'
+        : `${outcomeLabel} ${outcomeChoice}`
       : isClosed
         ? 'まもなく結果発表'
-        : currentRound?.bonusRoundType === 'QUIZ'
+        : isQuiz
           ? '2択クイズ'
           : 'スマホから回答';
   const winnerCount = bingoEvent?.winners.length ?? 0;
@@ -350,8 +353,8 @@ export default function ProjectorPage() {
             </section>
 
             <section className="relative min-h-0 overflow-hidden rounded-[2.5rem] border border-white/10 shadow-[0_24px_80px_rgba(0,0,0,0.24)] backdrop-blur-xl">
-              <div className={clsx('absolute inset-y-0 left-0 w-1/2', getHalfTone('A', outcomeChoice, currentStatus))} />
-              <div className={clsx('absolute inset-y-0 right-0 w-1/2', getHalfTone('B', outcomeChoice, currentStatus))} />
+              <div className={clsx('absolute inset-y-0 left-0 w-1/2', getHalfTone('A', outcomeChoice, currentStatus, isTie))} />
+              <div className={clsx('absolute inset-y-0 right-0 w-1/2', getHalfTone('B', outcomeChoice, currentStatus, isTie))} />
               <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-white/12" />
               <div className="absolute inset-x-0 top-0 h-20 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),transparent)]" />
 
@@ -359,20 +362,20 @@ export default function ProjectorPage() {
                 <div
                   className={clsx(
                     'flex min-h-0 flex-col justify-center px-10 py-8 text-left items-start pr-10 transition-all duration-500',
-                    isCompleted && outcomeChoice === 'A' && 'scale-[1.02]',
-                    isCompleted && outcomeChoice === 'B' && 'opacity-70 saturate-75',
+                    isCompleted && (outcomeChoice === 'A' || isTie) && 'scale-[1.02]',
+                    isCompleted && outcomeChoice === 'B' && !isTie && 'opacity-70 saturate-75',
                   )}
                 >
                   <div className="flex flex-wrap items-center gap-3">
                     <span className={clsx(
                       'rounded-full border px-4 py-2 text-sm font-semibold tracking-[0.08em]',
-                      isCompleted && outcomeChoice === 'A'
+                      isCompleted && (outcomeChoice === 'A' || isTie)
                         ? 'border-white/28 bg-white/20 text-white shadow-[0_0_24px_rgba(255,255,255,0.22)]'
                         : 'border-white/14 bg-black/16 text-white/88',
                     )}>
                       選択肢 A
                     </span>
-                    {isCompleted && outcomeChoice === 'A' && (
+                    {isCompleted && (outcomeChoice === 'A' || isTie) && (
                       <span className="rounded-full border border-white/28 bg-white px-4 py-2 text-sm font-bold tracking-[0.08em] text-rose-700 shadow-[0_0_28px_rgba(255,255,255,0.35)]">
                         {outcomeLabel}
                       </span>
@@ -389,14 +392,14 @@ export default function ProjectorPage() {
                   )}
                   <p className={clsx(
                     'mt-8 text-[2.75rem] font-bold leading-[1.26] text-white transition-all duration-500',
-                    isCompleted && outcomeChoice === 'A' && 'drop-shadow-[0_10px_30px_rgba(255,255,255,0.2)]',
-                    isCompleted && outcomeChoice === 'B' && 'text-white/72',
+                    isCompleted && (outcomeChoice === 'A' || isTie) && 'drop-shadow-[0_10px_30px_rgba(255,255,255,0.2)]',
+                    isCompleted && outcomeChoice === 'B' && !isTie && 'text-white/72',
                   )}>
                     {currentRound.optionA}
                   </p>
                   <p className={clsx(
                     'mt-5 text-base leading-7 transition-colors duration-500',
-                    isCompleted && outcomeChoice === 'A'
+                    isCompleted && (outcomeChoice === 'A' || isTie)
                       ? 'text-white/92'
                       : isCompleted && outcomeChoice === 'B'
                         ? 'text-white/56'
@@ -406,9 +409,11 @@ export default function ProjectorPage() {
                       ? '回答受付中'
                       : isClosed
                         ? '結果を集計しています'
-                        : outcomeChoice === 'A'
-                          ? `${outcomeLabel}です`
-                          : 'もう一方が優勢でした'}
+                        : isTie
+                          ? '同票です'
+                          : outcomeChoice === 'A'
+                            ? `${outcomeLabel}です`
+                            : 'もう一方が優勢でした'}
                   </p>
                 </div>
 
@@ -431,19 +436,19 @@ export default function ProjectorPage() {
                 <div
                   className={clsx(
                     'flex min-h-0 flex-col justify-center px-10 py-8 text-right items-end pl-10 transition-all duration-500',
-                    isCompleted && outcomeChoice === 'B' && 'scale-[1.02]',
-                    isCompleted && outcomeChoice === 'A' && 'opacity-70 saturate-75',
+                    isCompleted && (outcomeChoice === 'B' || isTie) && 'scale-[1.02]',
+                    isCompleted && outcomeChoice === 'A' && !isTie && 'opacity-70 saturate-75',
                   )}
                 >
                   <div className="flex flex-wrap items-center gap-3">
-                    {isCompleted && outcomeChoice === 'B' && (
+                    {isCompleted && (outcomeChoice === 'B' || isTie) && (
                       <span className="rounded-full border border-white/28 bg-white px-4 py-2 text-sm font-bold tracking-[0.08em] text-sky-700 shadow-[0_0_28px_rgba(255,255,255,0.35)]">
                         {outcomeLabel}
                       </span>
                     )}
                     <span className={clsx(
                       'rounded-full border px-4 py-2 text-sm font-semibold tracking-[0.08em]',
-                      isCompleted && outcomeChoice === 'B'
+                      isCompleted && (outcomeChoice === 'B' || isTie)
                         ? 'border-white/28 bg-white/20 text-white shadow-[0_0_24px_rgba(255,255,255,0.22)]'
                         : 'border-white/14 bg-black/16 text-white/88',
                     )}>
@@ -461,14 +466,14 @@ export default function ProjectorPage() {
                   )}
                   <p className={clsx(
                     'mt-8 text-[2.75rem] font-bold leading-[1.26] text-white transition-all duration-500',
-                    isCompleted && outcomeChoice === 'B' && 'drop-shadow-[0_10px_30px_rgba(255,255,255,0.2)]',
-                    isCompleted && outcomeChoice === 'A' && 'text-white/72',
+                    isCompleted && (outcomeChoice === 'B' || isTie) && 'drop-shadow-[0_10px_30px_rgba(255,255,255,0.2)]',
+                    isCompleted && outcomeChoice === 'A' && !isTie && 'text-white/72',
                   )}>
                     {currentRound.optionB}
                   </p>
                   <p className={clsx(
                     'mt-5 text-base leading-7 transition-colors duration-500',
-                    isCompleted && outcomeChoice === 'B'
+                    isCompleted && (outcomeChoice === 'B' || isTie)
                       ? 'text-white/92'
                       : isCompleted && outcomeChoice === 'A'
                         ? 'text-white/56'
@@ -478,9 +483,11 @@ export default function ProjectorPage() {
                       ? '回答受付中'
                       : isClosed
                         ? '結果を集計しています'
-                        : outcomeChoice === 'B'
-                          ? `${outcomeLabel}です`
-                          : 'もう一方が優勢でした'}
+                        : isTie
+                          ? '同票です'
+                          : outcomeChoice === 'B'
+                            ? `${outcomeLabel}です`
+                            : 'もう一方が優勢でした'}
                   </p>
                 </div>
               </div>

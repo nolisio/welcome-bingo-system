@@ -419,8 +419,8 @@ export async function startRound(payload: StartRoundPayload): Promise<RoundState
 
   const bonusRoundType = getEffectiveBonusRoundType(payload);
   const isBonusRound = bonusRoundType !== 'NONE';
-  const correctChoice =
-    bonusRoundType === 'QUIZ' ? payload.correctChoice ?? null : null;
+  // correctChoiceはボーナスQUIZだけでなく通常ラウンドのクイズでも使用する
+  const correctChoice = payload.correctChoice ?? null;
 
   if (bonusRoundType === 'QUIZ' && correctChoice == null) {
     throw new Error('ボーナス問題では正解を指定してください');
@@ -547,18 +547,18 @@ export async function closeVoting(): Promise<RoundState> {
     const majorityVote: VoteChoice | null =
       countA > countB ? 'A' : countB > countA ? 'B' : null;
     const resultChoice: VoteChoice | null =
-      round.bonusRoundType === 'QUIZ' ? round.correctChoice : majorityVote;
+      round.correctChoice !== null ? round.correctChoice : majorityVote;
+
+    const isTie = majorityVote === null && round.correctChoice === null;
 
     const pendingBonusSelectors =
       round.bonusRoundType !== 'NONE'
         ? Object.values(_game.participants)
             .filter((participant) => {
               const voted = round.votes[participant.id];
-              return (
-                resultChoice !== null &&
-                voted === resultChoice &&
-                hasUnopenedCell(participant.card.openedCells)
-              );
+              if (!voted || !hasUnopenedCell(participant.card.openedCells)) return false;
+              // 同票なら投票した全員、それ以外は勝者のみ
+              return isTie || (resultChoice !== null && voted === resultChoice);
             })
             .map((participant) => participant.id)
         : [];
@@ -569,7 +569,10 @@ export async function closeVoting(): Promise<RoundState> {
     if (round.bonusRoundType === 'NONE') {
       for (const participant of Object.values(_game.participants)) {
         const voted = round.votes[participant.id];
-        const isEligible = majorityVote !== null && voted === majorityVote;
+        // クイズ形式（correctChoiceあり）なら正解者、多数決なら多数派がマスを開ける
+        // 同票の場合は投票した全員がマスを開ける
+        const winChoice = round.correctChoice !== null ? round.correctChoice : majorityVote;
+        const isEligible = isTie ? voted != null : (winChoice !== null && voted === winChoice);
 
         if (!isEligible) {
           continue;
@@ -718,9 +721,10 @@ export function getPublicGameState() {
           optionAImageUrl: currentRound.optionAImageUrl,
           optionBImageUrl: currentRound.optionBImageUrl,
           sourceType: currentRound.sourceType,
-          isBonusRound: isVoting ? false : currentRound.isBonusRound,
-          bonusRoundType: isVoting ? 'NONE' : currentRound.bonusRoundType,
+          isBonusRound: currentRound.isBonusRound,
+          bonusRoundType: currentRound.bonusRoundType,
           correctChoice: isVoting ? null : currentRound.correctChoice,
+          isQuiz: currentRound.correctChoice !== null,
           status: currentRound.status,
           majorityVote: currentRound.majorityVote,
           voteCount: Object.keys(currentRound.votes).length,
@@ -744,6 +748,7 @@ export function getPublicGameState() {
       isBonusRound: round.isBonusRound,
       bonusRoundType: round.bonusRoundType,
       correctChoice: round.correctChoice,
+      isQuiz: round.correctChoice !== null,
       majorityVote: round.majorityVote,
       voteCount: Object.keys(round.votes).length,
       bonusSelectionCount: Object.keys(round.bonusSelections).length,
@@ -771,7 +776,9 @@ export function getParticipantView(participantId: string) {
     card: participant.card,
     currentVote: participant.currentVote,
     canChooseBonusCell,
-    drawnNumbers: [..._game.drawnNumbers],
+    drawnNumbers: currentRound?.status === 'VOTING' && !currentRound.isBonusRound
+      ? _game.drawnNumbers.filter((n) => n !== currentRound.drawnNumber)
+      : [..._game.drawnNumbers],
     customQuestionRequest: _game.customQuestionRequest,
     currentRound: currentRound
       ? {
@@ -785,12 +792,11 @@ export function getParticipantView(participantId: string) {
           optionAImageUrl: currentRound.optionAImageUrl,
           optionBImageUrl: currentRound.optionBImageUrl,
           sourceType: currentRound.sourceType,
-          isBonusRound:
-            currentRound.status === 'VOTING' ? false : currentRound.isBonusRound,
-          bonusRoundType:
-            currentRound.status === 'VOTING' ? 'NONE' : currentRound.bonusRoundType,
+          isBonusRound: currentRound.isBonusRound,
+          bonusRoundType: currentRound.bonusRoundType,
           correctChoice:
             currentRound.status === 'VOTING' ? null : currentRound.correctChoice,
+          isQuiz: currentRound.correctChoice !== null,
           status: currentRound.status,
           majorityVote: currentRound.majorityVote,
           voteCount: Object.keys(currentRound.votes).length,
